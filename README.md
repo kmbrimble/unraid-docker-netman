@@ -3,6 +3,13 @@
 *(formerly "unraid-multinet" — renamed to avoid ambiguity with an existing Community
 Applications plugin; see "Compared to Docker Networks (mstrhakr)" below.)*
 
+Unraid's dockerMan lets a container have exactly ONE network (Network Type + Fixed IP + MAC).
+This plugin lets each container have **additional** networks — each with its own optional
+fixed IP, alias, and (where the driver supports it) MAC — and makes them **persist across
+reinstall, force update, and "Previous Apps"** by writing them straight into the container's
+own template XML, the same file dockerMan already persists and re-applies. No runtime hook, no
+plugin database, no patched core file.
+
 ## How this was built
 
 The code here — the parser, the API, both injected pages — was written by Claude Cowork and
@@ -13,13 +20,6 @@ also did the acceptance testing. "Reviewed" here means something concrete, not a
 each release was installed on a real Unraid host, exercised against a real container recreated
 through dockerMan's own Force Update path, and checked in an actual browser before being called
 done — not just read back and assumed correct.
-
-Unraid's dockerMan lets a container have exactly ONE network (Network Type + Fixed IP + MAC).
-This plugin lets each container have **additional** networks — each with its own optional
-fixed IP, alias, and (where the driver supports it) MAC — and makes them **persist across
-reinstall, force update, and "Previous Apps"** by writing them straight into the container's
-own template XML, the same file dockerMan already persists and re-applies. No runtime hook, no
-plugin database, no patched core file.
 
 ## How it works
 
