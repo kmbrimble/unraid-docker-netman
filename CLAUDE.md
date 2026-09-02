@@ -139,6 +139,27 @@ commit, `gh release create`).
 container has no local PHP) and `node tests/js.test.js`. CI (`.github/workflows/ci.yml`) runs
 both plus `php -l` on PHP 8.1 and 8.4.
 
+## Plugin manager quirk: don't re-verify what it already verifies
+
+0.1.0 → 0.2.0 shipped with a custom bash-level md5 re-check in the install script, reading a
+versionless `&plgPATH;/&name;.md5` sidecar file written by its own `<FILE Name=... INLINE>`
+block — modelled on `unraid-secretsman`'s `.plg`. **Upgrading over an existing install failed
+live** with "package md5 mismatch" even though the 0.2.0 download was fine: Unraid's plugin
+manager (`dynamix.plugin.manager/scripts/plugin`, the file-fetch function) only re-verifies
+and re-fetches a `FILE` when it declares its own `<MD5>`/`<SHA256>` tag — a plain `<INLINE>`
+file with none never gets rewritten once something already exists at that path ("if file
+already exists ... do not overwrite"). The sidecar stayed stuck at 0.1.0's value forever, and
+our own redundant check compared the new txz against it and failed. **Fixed by deleting the
+sidecar and the custom check entirely** — the `.txz` `FILE` block's own `<MD5>` tag already
+gets verified by the plugin manager itself, in the same function, on the branch that DOES
+re-fetch on a mismatch, before the install script ever runs. Same shape of mistake as the CSRF
+lesson below: a defensive re-check of something the platform already guarantees, except this
+one was actively wrong instead of merely redundant. **Any future `.plg` FILE block for this
+plugin that needs to store a value across versions must not rely on file-overwrite — either
+give it a real `<MD5>`/`<SHA256>` so the platform's own reuse-or-refetch logic applies, or
+write/overwrite it unconditionally from inside the `Run="/bin/bash"` script, not via a second
+declarative `FILE` entry.**
+
 ## Live verification (C.3, terrible-butler)
 
 Confirmed end to end on the real host, not simulated:
