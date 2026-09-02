@@ -3,6 +3,12 @@
 Where this stands after the initial build + live verification session (2026-09-02/03), for
 whoever (human or a future session) picks this up next.
 
+**Renamed to Docker NetMan at 0.3.0** (repo `kmbrimble/unraid-docker-netman`, plugin id
+`docker.netman`) — see `CLAUDE.md` "Name" for why. Everything below predates the rename and
+uses the names that were current at the time (`unraid-multinet`, `MultiNet.page`,
+`/usr/local/emhttp/plugins/unraid-multinet/...`, etc.) — read it as history, not as current
+paths; the "0.3.0" section at the end has the current state and what changed.
+
 ## What's proven, with evidence
 
 - **The core design works end to end on the real host.** `terrible-butler` (primary `bridge`,
@@ -127,3 +133,42 @@ usage-limit pauses. If a session pauses on a limit, the CLI's own limit message 
 5-hour window's reset time — today's (2026-09-02) reset was communicated as **00:39 on
 2026-09-03**. Nothing in this repo depends on that timing; noted here only because it came up
 during this session and the owner asked for it to be recorded for reference.
+
+## 0.3.0: rename + real-browser fixes
+
+The owner reviewed 0.2.0 in an actual browser (the first time this project got real-browser
+testing) and found the CSRF bug had made the Add/Update Container injector effectively dead —
+see `CLAUDE.md` "0.3.0 real-browser fixes" for the full root-cause trace on all four issues
+found this round:
+
+1. `rowsEqual(a, b)` crashed on `expected=null`, which is exactly what the injector passes on
+   the edit page (no `state.json` client-side) — the crash aborted parsing, so an existing,
+   correct network row silently disappeared instead of showing. This was the bug that made the
+   whole feature look broken. Fixed and covered by new node tests, including the exact
+   real-world `terrible-butler` PostArgs string.
+2. The "Add network" button stretched full page width on a wide viewport (stock dockerMan CSS,
+   same class of bug as secretsman's Browse-button fix).
+3. Per-row fields ran across the page instead of stacking down it (unusable on phone width).
+4. Renamed unraid-multinet → **Docker NetMan** (collided with an existing CA plugin, "Docker
+   Networks" by mstrhakr) — every identifier renamed consistently (files, entities, API path,
+   JS global, state.json location, page names), with an automatic one-time `state.json`
+   migration from the old flash path baked into the new `.plg`'s install script.
+
+**Verified this round** (all against the real host, not just the test suite):
+- `netman_parse_post()`/`multinet.parseExtra` round-trip through the renamed code against
+  terrible-butler's real, unmodified template — confirms the "templates need no migration"
+  claim: the ExtraParams/PostArgs blocks don't reference the plugin's name at all, so the
+  rename needed zero template changes, only the state.json copy.
+- The old plugin was removed cleanly and Docker NetMan installed fresh from
+  `https://raw.githubusercontent.com/kmbrimble/unraid-docker-netman/main/docker.netman.plg`.
+- `state.json` migrated automatically (copied, old file left alone) and the migrated content
+  makes `manually_managed` come out `false` for terrible-butler's real row, where the same
+  parse with no state.json (simulating a fresh install with no migration) correctly comes out
+  `true` — proving the migration is what makes the difference, not a coincidence.
+- `terrible-butler` itself was **not** touched — still the same container ID from the 0.2.0
+  session, both networks attached, site returning 200.
+
+**Still not verified with actual JS execution in a browser**, same caveat as before: the visual
+placement of the Docker-page button, and that the Add/Update Container form's network dropdown
+and stacked-row layout render as intended. The `rowsEqual(null)` fix specifically should make
+the previously-invisible row reappear — that's the one thing most worth the owner's next look.

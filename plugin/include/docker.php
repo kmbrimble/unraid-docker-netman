@@ -1,11 +1,11 @@
 <?php
 /**
- * unraid-multinet — thin docker CLI wrappers. Every user-controlled value
+ * Docker NetMan — thin docker CLI wrappers. Every user-controlled value
  * goes through escapeshellarg(); nothing here is ever built by string
  * concatenation of unescaped input.
  */
 
-function multinet_run(string $cmd): array
+function netman_run(string $cmd): array
 {
     $descriptors = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
     $proc = proc_open($cmd, $descriptors, $pipes);
@@ -20,16 +20,16 @@ function multinet_run(string $cmd): array
     return ['ok' => $code === 0, 'out' => $out, 'err' => $err, 'code' => $code];
 }
 
-function multinet_docker_networks(): array
+function netman_docker_networks(): array
 {
-    $res = multinet_run('docker network ls --format ' . escapeshellarg('{{.Name}}'));
+    $res = netman_run('docker network ls --format ' . escapeshellarg('{{.Name}}'));
     if (!$res['ok']) {
         return [];
     }
     $names = array_filter(array_map('trim', explode("\n", $res['out'])));
     $out = [];
     foreach ($names as $name) {
-        $info = multinet_docker_network_inspect($name);
+        $info = netman_docker_network_inspect($name);
         if ($info) {
             $out[] = $info;
         }
@@ -37,9 +37,9 @@ function multinet_docker_networks(): array
     return $out;
 }
 
-function multinet_docker_network_inspect(string $name): ?array
+function netman_docker_network_inspect(string $name): ?array
 {
-    $res = multinet_run('docker network inspect ' . escapeshellarg($name) . ' --format ' . escapeshellarg('{{json .}}'));
+    $res = netman_run('docker network inspect ' . escapeshellarg($name) . ' --format ' . escapeshellarg('{{json .}}'));
     if (!$res['ok']) {
         return null;
     }
@@ -72,7 +72,7 @@ function multinet_docker_network_inspect(string $name): ?array
     ];
 }
 
-function multinet_docker_network_create(string $name, string $driver, ?string $subnet, ?string $gateway, ?string $ipRange, bool $internal, ?string $parent = null): array
+function netman_docker_network_create(string $name, string $driver, ?string $subnet, ?string $gateway, ?string $ipRange, bool $internal, ?string $parent = null): array
 {
     $cmd = 'docker network create --driver ' . escapeshellarg($driver);
     if ($subnet) {
@@ -91,15 +91,15 @@ function multinet_docker_network_create(string $name, string $driver, ?string $s
         $cmd .= ' -o parent=' . escapeshellarg($parent);
     }
     $cmd .= ' -- ' . escapeshellarg($name);
-    return multinet_run($cmd);
+    return netman_run($cmd);
 }
 
-function multinet_docker_network_delete(string $name): array
+function netman_docker_network_delete(string $name): array
 {
-    return multinet_run('docker network rm -- ' . escapeshellarg($name));
+    return netman_run('docker network rm -- ' . escapeshellarg($name));
 }
 
-function multinet_docker_network_connect(string $network, string $container, ?string $ip, ?string $alias): array
+function netman_docker_network_connect(string $network, string $container, ?string $ip, ?string $alias): array
 {
     $cmd = 'docker network connect';
     if ($ip) {
@@ -109,18 +109,18 @@ function multinet_docker_network_connect(string $network, string $container, ?st
         $cmd .= ' --alias ' . escapeshellarg($alias);
     }
     $cmd .= ' -- ' . escapeshellarg($network) . ' ' . escapeshellarg($container);
-    return multinet_run($cmd);
+    return netman_run($cmd);
 }
 
-function multinet_docker_network_disconnect(string $network, string $container): array
+function netman_docker_network_disconnect(string $network, string $container): array
 {
-    return multinet_run('docker network disconnect -- ' . escapeshellarg($network) . ' ' . escapeshellarg($container));
+    return netman_run('docker network disconnect -- ' . escapeshellarg($network) . ' ' . escapeshellarg($container));
 }
 
 /** Live network membership for a running container: name -> ['ip'=>,'mac'=>]. Empty array if not running. */
-function multinet_docker_container_networks(string $container): array
+function netman_docker_container_networks(string $container): array
 {
-    $res = multinet_run('docker inspect ' . escapeshellarg($container) . ' --format ' . escapeshellarg('{{json .NetworkSettings.Networks}}'));
+    $res = netman_run('docker inspect ' . escapeshellarg($container) . ' --format ' . escapeshellarg('{{json .NetworkSettings.Networks}}'));
     if (!$res['ok']) {
         return [];
     }
@@ -135,15 +135,15 @@ function multinet_docker_container_networks(string $container): array
     return $out;
 }
 
-function multinet_docker_container_running(string $container): bool
+function netman_docker_container_running(string $container): bool
 {
-    $res = multinet_run('docker inspect ' . escapeshellarg($container) . ' --format ' . escapeshellarg('{{.State.Running}}'));
+    $res = netman_run('docker inspect ' . escapeshellarg($container) . ' --format ' . escapeshellarg('{{.State.Running}}'));
     return $res['ok'] && trim($res['out']) === 'true';
 }
 
 /** Driver of a network, or null if it doesn't exist. Used to gate MAC support (ipvlan rejects it — see CLAUDE.md). */
-function multinet_docker_network_driver(string $name): ?string
+function netman_docker_network_driver(string $name): ?string
 {
-    $res = multinet_run('docker network inspect ' . escapeshellarg($name) . ' --format ' . escapeshellarg('{{.Driver}}'));
+    $res = netman_run('docker network inspect ' . escapeshellarg($name) . ' --format ' . escapeshellarg('{{.Driver}}'));
     return $res['ok'] ? trim($res['out']) : null;
 }

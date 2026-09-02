@@ -1,0 +1,143 @@
+<?xml version="1.0" standalone="yes"?>
+
+<!--
+Docker NetMan — additional Docker networks per container, persisted in
+the container's own template.
+https://github.com/kmbrimble/unraid-docker-netman
+
+Formerly "unraid-multinet" (https://github.com/kmbrimble/unraid-multinet, archived) — renamed
+to avoid ambiguity with the existing Community Applications plugin "Docker Networks" by
+mstrhakr. See README.md "Compared to Docker Networks (mstrhakr)" for how the two differ.
+
+Not distributed via Community Applications. Install by URL from
+Plugins -> Install Plugin, using this file's raw.githubusercontent.com URL.
+See README.md and CLAUDE.md for design and the release process.
+-->
+
+<!DOCTYPE PLUGIN [
+<!ENTITY name      "docker.netman">
+<!ENTITY author    "kmbrimble">
+<!ENTITY version   "0.3.0">
+<!ENTITY launch    "Settings/DockerNetMan">
+<!ENTITY pluginURL "https://raw.githubusercontent.com/kmbrimble/unraid-docker-netman/main/docker.netman.plg">
+<!ENTITY gitURL    "https://github.com/kmbrimble/unraid-docker-netman/releases/download/v&version;">
+<!ENTITY plgPATH   "/boot/config/plugins/&name;">
+<!ENTITY emhttp    "/usr/local/emhttp/plugins/&name;">
+<!ENTITY oldPlgPATH "/boot/config/plugins/unraid-multinet">
+<!ENTITY md5       "bc2b72a0d7993533f984e1bd3da9b4a4">
+]>
+
+<PLUGIN name="&name;" author="&author;" version="&version;" launch="&launch;" pluginURL="&pluginURL;" support="https://github.com/kmbrimble/unraid-docker-netman" min="7.0" icon="sitemap">
+
+<CHANGES>
+###0.3.0
+- Renamed from "unraid-multinet" to **Docker NetMan** (plugin id `docker.netman`) — the old
+  name was ambiguous with an existing CA plugin, "Docker Networks" by mstrhakr. New repo:
+  https://github.com/kmbrimble/unraid-docker-netman. The old repo (unraid-multinet) is archived
+  with its README pointing here. On install, if `/boot/config/plugins/unraid-multinet/state.json`
+  exists and `&plgPATH;/state.json` does not, it's copied across automatically (the old file is
+  left alone, not deleted) — no other migration needed, since the ExtraParams/PostArgs blocks
+  themselves are name-agnostic (verified by re-parsing a real template under the renamed code
+  unchanged). All identifiers renamed consistently: files, entity names, the API path, the JS
+  global (`window.dockerNetman`), state.json's location, and both `.page` files
+  (DockerNetMan.page, DockerNetManInject.page).
+- Fixed: `rowsEqual()` (plugin/docker-netman-core.js) threw `TypeError: Cannot read properties
+  of null (reading 'length')` when `expected` was `null` — exactly what the Add/Update Container
+  injector passes, since it has no state.json available client-side. The throw aborted parsing
+  entirely, so an existing, correctly-written network row (confirmed present in both the
+  template and state.json) silently disappeared from the edit page instead of showing. Fixed:
+  `expected === null` now means "unknown, trust what's parsed" (not manually managed), not a
+  crash. The PHP side (include/netman.php) was checked for the same assumption and does not
+  have it — every server-side caller always has a real state.json array to pass, even if empty.
+- Fixed: the "Add network" button stretched to the full page width on a wide viewport (stock
+  dockerMan CSS applies `width:100%` to any button/input inside a form row; a narrow window
+  hid this by making 100% look reasonable by coincidence) — same class of bug as
+  unraid-secretsman's Browse-button overflow fix. Constrained explicitly.
+- Changed: the per-row fields (network, Fixed IP, Alias, MAC, Remove) in the Add/Update
+  Container form's "Additional networks" section now stack DOWN the page as labelled rows,
+  matching dockerMan's own dl/dt/dd rhythm, instead of running across in a flex strip that had
+  no room to breathe on a phone-width viewport.
+###0.2.0
+- Fixed: the Networks/Containers UI was never reachable as its own Docker tab — `Menu="Docker:3"`
+  just got concatenated onto the bottom of the Docker page's own content, since that page's
+  `Menu="Docker:1"` anchor (DockerContainers.page) sets `Tabs="false"` and an untabbed menu
+  group renders every page in it in sequence, not as separate tabs. Confirmed live in a real
+  browser. Moved to its own page under Settings, with a small button injected on the Docker page
+  (next to Add Container/Start All) linking to it — nothing else from the plugin renders on the
+  Docker page itself now.
+- Fixed: the Add/Update Container form's "Additional networks" section always showed "could not
+  reach the plugin endpoint" — confirmed live. Root cause: Unraid's global CSRF enforcement
+  (`local_prepend.php`) silently 0-byte's any plugin POST missing a valid token, and the
+  injector's own `XMLHttpRequest` calls (unlike the Settings page's jQuery calls, which get this
+  for free via the global `$.ajaxPrefilter`) never sent one. Fixed by sending the page's global
+  `csrf_token` JS var as both the `X-CSRF-Token` header and a `csrf_token` body field on every
+  request the injector makes. Verified against the real host: an authenticated session without
+  the token gets a 200 with an empty body (`csrf_terminate()`'s exact shape); the same session
+  with the header gets the real JSON response.
+- Polish: the container matrix on the Settings page is now a real table (container / primary /
+  path / status / additional networks / actions columns) instead of a stack of loose rows.
+###0.1.0
+- First release. Additional Docker networks per container, persisted in the container's own
+  template (ExtraParams for user-defined primaries, PostArgs for bridge/host/none/container:*
+  primaries — see README.md and CLAUDE.md for the full design). Docker → Networks tab
+  (network CRUD, container matrix with Save/Apply now), and an "Additional networks" section
+  injected into the Add/Update Container form below the Fixed MAC address row.
+</CHANGES>
+
+<FILE Name="&plgPATH;/&name;-&version;.txz">
+<URL>&gitURL;/&name;-&version;.txz</URL>
+<MD5>&md5;</MD5>
+</FILE>
+
+<FILE Run="/bin/bash">
+<INLINE>
+set -e
+
+# No separate md5 re-check here — the .txz FILE block's own &lt;MD5&gt; tag above is already
+# verified by the plugin manager itself before this script runs (dynamix.plugin.manager/
+# scripts/plugin). A prior version had a redundant bash-level re-check against a versionless
+# sidecar file that went stale across upgrades and broke a real install — see CLAUDE.md
+# "Plugin manager quirk" for the incident. Don't reintroduce it.
+
+upgradepkg --install-new &plgPATH;/&name;-&version;.txz
+
+# Unpacks to &emhttp; (include/, *.page, docker-netman-core.js, README.md) — .page files must
+# sit in the plugin's installed ROOT (Unraid's page loader globs plugins/*/*.page
+# non-recursively).
+
+mkdir -p &plgPATH;
+
+# One-time migration from the pre-rename "unraid-multinet" install: state.json only
+# disambiguates "this plugin's own block" from something hand-written — copying it (not
+# moving it) means a container's existing additional-network row keeps showing as such
+# instead of looking manually-managed after the rename, with zero risk to the old install if
+# something goes wrong reading it. Templates need no migration at all: the ExtraParams/PostArgs
+# blocks they carry are plain docker/shell syntax with no plugin name embedded in them.
+if [[ -f &oldPlgPATH;/state.json &amp;&amp; ! -f &plgPATH;/state.json ]]; then
+  cp &oldPlgPATH;/state.json &plgPATH;/state.json
+  echo "docker.netman: migrated state.json from the old unraid-multinet install"
+fi
+if [[ ! -f &plgPATH;/state.json ]]; then
+  echo '{}' > &plgPATH;/state.json
+fi
+
+echo "docker.netman: install complete"
+</INLINE>
+</FILE>
+
+<FILE Run="/bin/bash" Method="remove">
+<INLINE>
+# Templates are untouched by uninstall, deliberately: any additional-network fragment already
+# written into a template's ExtraParams/PostArgs keeps taking effect on its own (dockerMan's
+# own xmlToCommand() applies it, no plugin involvement needed) — see README.md "Limitations".
+# Only the installed plugin tree is removed; state.json (the sidecar that tells the plugin's
+# own blocks apart from hand-written ones) is deliberately KEPT so a future reinstall
+# recognises its own prior work instead of treating every existing block as manually managed.
+removepkg &name;-&version;
+rm -rf &emhttp;
+
+echo "docker.netman: removed. Templates and &plgPATH;/state.json were left untouched."
+</INLINE>
+</FILE>
+
+</PLUGIN>

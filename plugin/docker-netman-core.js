@@ -1,17 +1,18 @@
 /**
  * Pure parse/serialize functions shared between the browser injector
- * (MultiNetInject.page, MultiNet.page) and node tests (tests/js.test.js).
- * Mirrors plugin/include/multinet.php's logic exactly — this is the JS
- * side of the same design, used client-side for live preview only; the
- * server (include/multinet.php) is the actual source of truth on save.
+ * (DockerNetManInject.page, DockerNetMan.page) and node tests
+ * (tests/js.test.js). Mirrors plugin/include/netman.php's logic exactly —
+ * this is the JS side of the same design, used client-side for live
+ * preview only; the server (include/netman.php) is the actual source of
+ * truth on save.
  *
- * UMD wrapper: `window.multinet` in a browser, `module.exports` in node.
+ * UMD wrapper: `window.dockerNetman` in a browser, `module.exports` in node.
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) {
     module.exports = factory();
   } else {
-    root.multinet = factory();
+    root.dockerNetman = factory();
   }
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
@@ -75,6 +76,11 @@
   }
 
   function rowsEqual(a, b) {
+    // expected (b) is null/undefined when the caller has no state.json to compare
+    // against (e.g. the browser injector, which never has state.json client-side) —
+    // "unknown" must not be treated as a mismatch, or every container looks
+    // manually-managed the moment expected isn't available. See CLAUDE.md.
+    if (b == null) return true;
     if (a.length !== b.length) return false;
     for (var i = 0; i < a.length; i++) {
       var ra = rowDefaults(a[i]), rb = rowDefaults(b[i]);

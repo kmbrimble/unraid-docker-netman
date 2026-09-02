@@ -12,7 +12,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERSION="${1:-$(date +%Y.%m.%d)}"
-NAME="unraid-multinet"
+NAME="docker.netman"
 # Slackware's upgradepkg/installpkg extracts a package relative to /, not
 # relative to any "plugins" convention — the full absolute destination path
 # has to be baked into the archive itself (see unraid-secretsman's
@@ -33,7 +33,7 @@ cp "$REPO_ROOT"/plugin/include/*.php "$PKG_DIR/include/"
 # .page files must sit in the plugin's installed ROOT — Unraid's page loader
 # globs plugins/*/*.page non-recursively.
 cp "$REPO_ROOT"/plugin/*.page "$PKG_DIR/"
-cp "$REPO_ROOT"/plugin/multinet-core.js "$PKG_DIR/"
+cp "$REPO_ROOT"/plugin/docker-netman-core.js "$PKG_DIR/"
 
 # The Installed Plugins page renders README.md from the plugin's installed
 # root (same convention as unraid-secretsman).
@@ -50,6 +50,6 @@ echo "Built: $TXZ_PATH"
 echo "  md5: $MD5"
 echo
 echo "Next (manual, not run by this script):"
-echo "  1. Update unraid-multinet.plg: &version; to $VERSION, &md5; to $MD5"
+echo "  1. Update docker.netman.plg: &version; to $VERSION, &md5; to $MD5"
 echo "  2. git commit the updated .plg"
 echo "  3. gh release create v$VERSION $TXZ_PATH $OUT_DIR/$NAME.md5"

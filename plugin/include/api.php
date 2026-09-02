@@ -1,6 +1,6 @@
 <?php
 /**
- * unraid-multinet — JSON endpoint for MultiNet.page / MultiNetInject.page.
+ * Docker NetMan — JSON endpoint for DockerNetMan.page / DockerNetManInject.page.
  *
  * No explicit CSRF check here, deliberately (same as unraid-secretsman's
  * store_api.php): webGui/include/local_prepend.php (the global
@@ -12,13 +12,13 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/multinet.php';
+require_once __DIR__ . '/netman.php';
 require_once __DIR__ . '/docker.php';
 
 header('Content-Type: application/json');
 header('Cache-Control: no-store');
 
-function multinet_respond(array $body): void
+function netman_respond(array $body): void
 {
     echo json_encode($body);
     exit;
@@ -26,28 +26,28 @@ function multinet_respond(array $body): void
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
     http_response_code(405);
-    multinet_respond(['ok' => false, 'error' => 'unraid-multinet: POST required']);
+    netman_respond(['ok' => false, 'error' => 'Docker NetMan: POST required']);
 }
 
 $action = $_POST['action'] ?? '';
 
 /** Reserved names that can never be an additional-network target or be deleted. */
-function multinet_is_protected_network(string $name): bool
+function netman_is_protected_network(string $name): bool
 {
-    if (in_array($name, multinet_reserved_networks(), true)) {
+    if (in_array($name, netman_reserved_networks(), true)) {
         return true;
     }
     return (bool) preg_match('/^br\d/', $name);
 }
 
 /**
- * Read one template and compute its full multinet summary: primary
+ * Read one template and compute its full Docker NetMan summary: primary
  * network/ip/mac (from the template, native dockerMan fields), the
  * parsed desired additional-network rows, which path is in effect, and
  * live state from `docker inspect` (only meaningful if the container is
  * actually running right now).
  */
-function multinet_container_summary(string $templatePath, array $state): ?array
+function netman_container_summary(string $templatePath, array $state): ?array
 {
     $xml = @simplexml_load_file($templatePath);
     if ($xml === false) {
@@ -58,23 +58,23 @@ function multinet_container_summary(string $templatePath, array $state): ?array
     $primary = explode(':', $primaryRaw)[0]; // "container:foo" -> "container" for path selection, keep full for display
     $myIP = (string) $xml->MyIP;
     $myMAC = (string) $xml->MyMAC;
-    $extraParams = multinet_xml_decode((string) $xml->ExtraParams);
-    $postArgs = multinet_xml_decode((string) $xml->PostArgs);
+    $extraParams = netman_xml_decode((string) $xml->ExtraParams);
+    $postArgs = netman_xml_decode((string) $xml->PostArgs);
 
-    $expected = multinet_state_get($state, $name);
-    $path = multinet_choose_path($primaryRaw);
+    $expected = netman_state_get($state, $name);
+    $path = netman_choose_path($primaryRaw);
 
     if ($path === 'extra') {
-        $parsed = multinet_parse_extra($extraParams, $primary, $expected);
+        $parsed = netman_parse_extra($extraParams, $primary, $expected);
     } else {
-        $parsed = multinet_parse_post($postArgs, $name, $expected);
+        $parsed = netman_parse_post($postArgs, $name, $expected);
     }
 
-    $driver = $path === 'extra' ? multinet_docker_network_driver($primary) : null;
+    $driver = $path === 'extra' ? netman_docker_network_driver($primary) : null;
     $macSupported = $driver === 'bridge';
 
-    $running = multinet_docker_container_running($name);
-    $live = $running ? multinet_docker_container_networks($name) : [];
+    $running = netman_docker_container_running($name);
+    $live = $running ? netman_docker_container_networks($name) : [];
 
     return [
         'name' => $name,
@@ -94,7 +94,7 @@ function multinet_container_summary(string $templatePath, array $state): ?array
 
 switch ($action) {
     case 'networks': {
-        multinet_respond(['ok' => true, 'networks' => multinet_docker_networks()]);
+        netman_respond(['ok' => true, 'networks' => netman_docker_networks()]);
     }
 
     case 'network_create': {
@@ -106,49 +106,49 @@ switch ($action) {
         $internal = ($_POST['internal'] ?? '') === '1';
         $parent = trim((string) ($_POST['parent'] ?? '')) ?: null;
         if ($name === '' || !preg_match('/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/', $name)) {
-            multinet_respond(['ok' => false, 'error' => 'invalid network name']);
+            netman_respond(['ok' => false, 'error' => 'invalid network name']);
         }
-        if (multinet_is_protected_network($name)) {
-            multinet_respond(['ok' => false, 'error' => 'that name is reserved']);
+        if (netman_is_protected_network($name)) {
+            netman_respond(['ok' => false, 'error' => 'that name is reserved']);
         }
-        $res = multinet_docker_network_create($name, $driver, $subnet, $gateway, $ipRange, $internal, $parent);
-        multinet_respond(['ok' => $res['ok'], 'error' => $res['ok'] ? null : trim($res['err'] ?: $res['out'])]);
+        $res = netman_docker_network_create($name, $driver, $subnet, $gateway, $ipRange, $internal, $parent);
+        netman_respond(['ok' => $res['ok'], 'error' => $res['ok'] ? null : trim($res['err'] ?: $res['out'])]);
     }
 
     case 'network_delete': {
         $name = trim((string) ($_POST['name'] ?? ''));
-        if (multinet_is_protected_network($name)) {
-            multinet_respond(['ok' => false, 'error' => 'refusing to delete a reserved network']);
+        if (netman_is_protected_network($name)) {
+            netman_respond(['ok' => false, 'error' => 'refusing to delete a reserved network']);
         }
-        $info = multinet_docker_network_inspect($name);
+        $info = netman_docker_network_inspect($name);
         if ($info && !empty($info['containers'])) {
-            multinet_respond(['ok' => false, 'error' => 'refusing to delete: containers still attached']);
+            netman_respond(['ok' => false, 'error' => 'refusing to delete: containers still attached']);
         }
-        $res = multinet_docker_network_delete($name);
-        multinet_respond(['ok' => $res['ok'], 'error' => $res['ok'] ? null : trim($res['err'] ?: $res['out'])]);
+        $res = netman_docker_network_delete($name);
+        netman_respond(['ok' => $res['ok'], 'error' => $res['ok'] ? null : trim($res['err'] ?: $res['out'])]);
     }
 
     case 'containers': {
-        $state = multinet_state_load();
+        $state = netman_state_load();
         $out = [];
-        foreach (multinet_list_templates() as $path) {
-            $summary = multinet_container_summary($path, $state);
+        foreach (netman_list_templates() as $path) {
+            $summary = netman_container_summary($path, $state);
             if ($summary) {
                 $out[] = $summary;
             }
         }
-        multinet_respond(['ok' => true, 'containers' => $out]);
+        netman_respond(['ok' => true, 'containers' => $out]);
     }
 
     case 'get': {
         $name = trim((string) ($_POST['name'] ?? ''));
-        $tpl = multinet_read_template($name);
+        $tpl = netman_read_template($name);
         if (!$tpl) {
-            multinet_respond(['ok' => false, 'error' => 'no template for that container']);
+            netman_respond(['ok' => false, 'error' => 'no template for that container']);
         }
-        $state = multinet_state_load();
-        $summary = multinet_container_summary($tpl['path'], $state);
-        multinet_respond(['ok' => (bool) $summary, 'container' => $summary]);
+        $state = netman_state_load();
+        $summary = netman_container_summary($tpl['path'], $state);
+        netman_respond(['ok' => (bool) $summary, 'container' => $summary]);
     }
 
     case 'preview': {
@@ -156,68 +156,68 @@ switch ($action) {
         $name = trim((string) ($_POST['name'] ?? ''));
         $mac = trim((string) ($_POST['mac'] ?? '')) ?: null;
         $rows = json_decode((string) ($_POST['rows'] ?? '[]'), true) ?: [];
-        $path = multinet_choose_path($primary);
+        $path = netman_choose_path($primary);
         if ($path === 'extra') {
-            $driver = multinet_docker_network_driver($primary);
-            $run = multinet_build_network_run($primary, $rows, $mac, $driver === 'bridge');
-            multinet_respond(['ok' => true, 'path' => 'extra', 'fragment' => $run]);
+            $driver = netman_docker_network_driver($primary);
+            $run = netman_build_network_run($primary, $rows, $mac, $driver === 'bridge');
+            netman_respond(['ok' => true, 'path' => 'extra', 'fragment' => $run]);
         } else {
-            $chain = multinet_build_connect_chain($name, $rows);
-            multinet_respond(['ok' => true, 'path' => 'post', 'fragment' => $chain === '' ? '' : '&& ' . $chain]);
+            $chain = netman_build_connect_chain($name, $rows);
+            netman_respond(['ok' => true, 'path' => 'post', 'fragment' => $chain === '' ? '' : '&& ' . $chain]);
         }
     }
 
     case 'save': {
         $name = trim((string) ($_POST['name'] ?? ''));
         $rows = json_decode((string) ($_POST['rows'] ?? '[]'), true) ?: [];
-        $tpl = multinet_read_template($name);
+        $tpl = netman_read_template($name);
         if (!$tpl) {
-            multinet_respond(['ok' => false, 'error' => 'no template for that container']);
+            netman_respond(['ok' => false, 'error' => 'no template for that container']);
         }
         $xml = $tpl['xml'];
         $primaryRaw = (string) $xml->Network;
         $primary = explode(':', $primaryRaw)[0];
         $myMAC = (string) $xml->MyMAC;
-        $extraParams = multinet_xml_decode((string) $xml->ExtraParams);
-        $postArgs = multinet_xml_decode((string) $xml->PostArgs);
+        $extraParams = netman_xml_decode((string) $xml->ExtraParams);
+        $postArgs = netman_xml_decode((string) $xml->PostArgs);
 
-        $state = multinet_state_load();
-        $expected = multinet_state_get($state, $name);
-        $path = multinet_choose_path($primaryRaw);
+        $state = netman_state_load();
+        $expected = netman_state_get($state, $name);
+        $path = netman_choose_path($primaryRaw);
 
         foreach ($rows as $row) {
-            if (empty($row['network']) || multinet_is_protected_network($row['network']) || $row['network'] === $primary) {
-                multinet_respond(['ok' => false, 'error' => 'invalid additional network: ' . ($row['network'] ?? '')]);
+            if (empty($row['network']) || netman_is_protected_network($row['network']) || $row['network'] === $primary) {
+                netman_respond(['ok' => false, 'error' => 'invalid additional network: ' . ($row['network'] ?? '')]);
             }
         }
 
         if ($path === 'extra') {
-            $parsed = multinet_parse_extra($extraParams, $primary, $expected);
+            $parsed = netman_parse_extra($extraParams, $primary, $expected);
             if ($parsed['manually_managed']) {
-                multinet_respond(['ok' => false, 'error' => 'manually managed: ExtraParams contains a --network block this plugin did not write. Refusing to rewrite it.', 'manually_managed' => true]);
+                netman_respond(['ok' => false, 'error' => 'manually managed: ExtraParams contains a --network block this plugin did not write. Refusing to rewrite it.', 'manually_managed' => true]);
             }
-            $driver = multinet_docker_network_driver($primary);
-            $run = multinet_build_network_run($primary, $rows, $myMAC ?: null, $driver === 'bridge');
-            $newExtraParams = multinet_serialize_extra($parsed['remaining'], $run);
-            $ok = multinet_write_template_field($tpl['path'], 'ExtraParams', $newExtraParams);
+            $driver = netman_docker_network_driver($primary);
+            $run = netman_build_network_run($primary, $rows, $myMAC ?: null, $driver === 'bridge');
+            $newExtraParams = netman_serialize_extra($parsed['remaining'], $run);
+            $ok = netman_write_template_field($tpl['path'], 'ExtraParams', $newExtraParams);
         } else {
-            $parsed = multinet_parse_post($postArgs, $name, $expected);
+            $parsed = netman_parse_post($postArgs, $name, $expected);
             if ($parsed['manually_managed']) {
-                multinet_respond(['ok' => false, 'error' => 'manually managed: PostArgs contains a docker network connect chain this plugin did not write. Refusing to rewrite it.', 'manually_managed' => true]);
+                netman_respond(['ok' => false, 'error' => 'manually managed: PostArgs contains a docker network connect chain this plugin did not write. Refusing to rewrite it.', 'manually_managed' => true]);
             }
-            $chain = multinet_build_connect_chain($name, $rows);
-            $newPostArgs = multinet_serialize_post($parsed['remaining'], $chain);
-            $ok = multinet_write_template_field($tpl['path'], 'PostArgs', $newPostArgs);
+            $chain = netman_build_connect_chain($name, $rows);
+            $newPostArgs = netman_serialize_post($parsed['remaining'], $chain);
+            $ok = netman_write_template_field($tpl['path'], 'PostArgs', $newPostArgs);
         }
 
         if (!$ok) {
-            multinet_respond(['ok' => false, 'error' => 'failed to write template']);
+            netman_respond(['ok' => false, 'error' => 'failed to write template']);
         }
 
-        $state = multinet_state_set($state, $name, $primaryRaw, $path, $rows);
-        multinet_state_save($state);
+        $state = netman_state_set($state, $name, $primaryRaw, $path, $rows);
+        netman_state_save($state);
 
-        multinet_respond(['ok' => true, 'path' => $path]);
+        netman_respond(['ok' => true, 'path' => $path]);
     }
 
     case 'apply': {
@@ -227,15 +227,15 @@ switch ($action) {
         // manual `docker network connect` step; it does not touch the
         // container's primary network or restart it.
         $name = trim((string) ($_POST['name'] ?? ''));
-        $tpl = multinet_read_template($name);
+        $tpl = netman_read_template($name);
         if (!$tpl) {
-            multinet_respond(['ok' => false, 'error' => 'no template for that container']);
+            netman_respond(['ok' => false, 'error' => 'no template for that container']);
         }
-        if (!multinet_docker_container_running($name)) {
-            multinet_respond(['ok' => false, 'error' => 'container is not running']);
+        if (!netman_docker_container_running($name)) {
+            netman_respond(['ok' => false, 'error' => 'container is not running']);
         }
-        $state = multinet_state_load();
-        $summary = multinet_container_summary($tpl['path'], $state);
+        $state = netman_state_load();
+        $summary = netman_container_summary($tpl['path'], $state);
         $desired = [];
         foreach ($summary['rows'] as $row) {
             $desired[$row['network']] = $row;
@@ -250,7 +250,7 @@ switch ($action) {
                 continue;
             }
             if (!isset($desired[$net])) {
-                $res = multinet_docker_network_disconnect($net, $name);
+                $res = netman_docker_network_disconnect($net, $name);
                 $actions[] = ['op' => 'disconnect', 'network' => $net, 'ok' => $res['ok'], 'error' => $res['ok'] ? null : trim($res['err'])];
             }
         }
@@ -260,10 +260,10 @@ switch ($action) {
             $needsReconnect = $current !== null && !empty($row['ip']) && $current['ip'] !== $row['ip'];
             if ($current === null || $needsReconnect) {
                 if ($needsReconnect) {
-                    $d = multinet_docker_network_disconnect($net, $name);
+                    $d = netman_docker_network_disconnect($net, $name);
                     $actions[] = ['op' => 'disconnect', 'network' => $net, 'ok' => $d['ok'], 'error' => $d['ok'] ? null : trim($d['err'])];
                 }
-                $res = multinet_docker_network_connect($net, $name, $row['ip'] ?: null, $row['alias'] ?: null);
+                $res = netman_docker_network_connect($net, $name, $row['ip'] ?: null, $row['alias'] ?: null);
                 $actions[] = ['op' => 'connect', 'network' => $net, 'ok' => $res['ok'], 'error' => $res['ok'] ? null : trim($res['err'])];
             }
         }
@@ -274,9 +274,9 @@ switch ($action) {
                 $ok = false;
             }
         }
-        multinet_respond(['ok' => $ok, 'actions' => $actions]);
+        netman_respond(['ok' => $ok, 'actions' => $actions]);
     }
 
     default:
-        multinet_respond(['ok' => false, 'error' => 'unknown action']);
+        netman_respond(['ok' => false, 'error' => 'unknown action']);
 }

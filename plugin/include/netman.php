@@ -1,6 +1,6 @@
 <?php
 /**
- * unraid-multinet — pure library. No side effects at include time.
+ * Docker NetMan — pure library. No side effects at include time.
  *
  * Serialization design (see docs/SPEC.md "Serialization design" for the
  * full rationale — this implements it as written, do not relitigate it
@@ -9,7 +9,7 @@
  * - A container's additional networks live ONLY in its template, inside
  *   ExtraParams (primary is a user-defined network) or PostArgs (primary
  *   is bridge/host/none/container:*) — never both.
- * - /boot/config/plugins/unraid-multinet/state.json is a sidecar recording
+ * - /boot/config/plugins/docker.netman/state.json is a sidecar recording
  *   what THIS plugin last wrote per container, used only to tell "our
  *   block" apart from something the user typed by hand. The template is
  *   always re-parsed as truth; state.json only disambiguates.
@@ -23,10 +23,10 @@
  * 'alias' => ?str, 'mac' => ?str].
  */
 
-const MULTINET_STATE_PATH = '/boot/config/plugins/unraid-multinet/state.json';
+const NETMAN_STATE_PATH = '/boot/config/plugins/docker.netman/state.json';
 
 /** Networks that can never be an "additional network" target. */
-function multinet_reserved_networks(): array
+function netman_reserved_networks(): array
 {
     return ['bridge', 'host', 'none'];
 }
@@ -37,7 +37,7 @@ function multinet_reserved_networks(): array
  * parsing fragments this plugin itself wrote (which never need nested
  * quoting) and for finding token boundaries in arbitrary user text.
  */
-function multinet_tokenize(string $s): array
+function netman_tokenize(string $s): array
 {
     $tokens = [];
     $len = strlen($s);
@@ -70,13 +70,13 @@ function multinet_tokenize(string $s): array
     return $tokens;
 }
 
-function multinet_is_network_flag(string $tok): bool
+function netman_is_network_flag(string $tok): bool
 {
     return $tok === '--network' || $tok === '--net';
 }
 
 /** name=X[,ip=Y][,alias=Z][,mac-address=W] -> ['network'=>X, ...] (missing keys omitted). */
-function multinet_parse_advanced_value(string $value): array
+function netman_parse_advanced_value(string $value): array
 {
     $out = [];
     foreach (explode(',', $value) as $kv) {
@@ -105,7 +105,7 @@ function multinet_parse_advanced_value(string $value): array
     return $out;
 }
 
-function multinet_row_defaults(array $row): array
+function netman_row_defaults(array $row): array
 {
     return [
         'network' => $row['network'] ?? '',
@@ -115,7 +115,7 @@ function multinet_row_defaults(array $row): array
     ];
 }
 
-function multinet_rows_equal(array $a, array $b): bool
+function netman_rows_equal(array $a, array $b): bool
 {
     if (count($a) !== count($b)) {
         return false;
@@ -125,8 +125,8 @@ function multinet_rows_equal(array $a, array $b): bool
         if ($rowB === null) {
             return false;
         }
-        $rowA = multinet_row_defaults($rowA);
-        $rowB = multinet_row_defaults($rowB);
+        $rowA = netman_row_defaults($rowA);
+        $rowB = netman_row_defaults($rowB);
         if ($rowA !== $rowB) {
             return false;
         }
@@ -139,7 +139,7 @@ function multinet_rows_equal(array $a, array $b): bool
  * bridge/host/none/container:* -> PostArgs. Anything else (a user-defined
  * bridge/ipvlan/macvlan network, e.g. br0, br0.66, proxynet) -> ExtraParams.
  */
-function multinet_choose_path(string $primary): string
+function netman_choose_path(string $primary): string
 {
     if ($primary === 'bridge' || $primary === 'host' || $primary === 'none' || str_starts_with($primary, 'container:')) {
         return 'post';
@@ -154,15 +154,15 @@ function multinet_choose_path(string $primary): string
  * $expected is the state.json rows list for this container (or [] if none
  * on record), used only to tell "our block" apart from a hand-written one.
  */
-function multinet_parse_extra(string $extraParams, string $primary, array $expected): array
+function netman_parse_extra(string $extraParams, string $primary, array $expected): array
 {
-    $tokens = multinet_tokenize($extraParams);
+    $tokens = netman_tokenize($extraParams);
     $n = count($tokens);
 
     $startIdx = null;
     $primaryMac = null;
     for ($i = 0; $i < $n - 1; $i++) {
-        if (!multinet_is_network_flag($tokens[$i])) {
+        if (!netman_is_network_flag($tokens[$i])) {
             continue;
         }
         $val = $tokens[$i + 1];
@@ -170,7 +170,7 @@ function multinet_parse_extra(string $extraParams, string $primary, array $expec
             $startIdx = $i;
             break;
         }
-        $parsed = multinet_parse_advanced_value($val);
+        $parsed = netman_parse_advanced_value($val);
         if (($parsed['network'] ?? null) === $primary) {
             $startIdx = $i;
             $primaryMac = $parsed['mac'] ?? null;
@@ -190,12 +190,12 @@ function multinet_parse_extra(string $extraParams, string $primary, array $expec
 
     $rows = [];
     $j = $startIdx + 2; // skip the primary's --network + value
-    while ($j < $n - 1 && multinet_is_network_flag($tokens[$j])) {
-        $parsed = multinet_parse_advanced_value($tokens[$j + 1]);
+    while ($j < $n - 1 && netman_is_network_flag($tokens[$j])) {
+        $parsed = netman_parse_advanced_value($tokens[$j + 1]);
         if (!isset($parsed['network'])) {
             break; // malformed — stop the run here, treat rest as remaining
         }
-        $rows[] = multinet_row_defaults($parsed);
+        $rows[] = netman_row_defaults($parsed);
         $j += 2;
     }
     $endIdx = $j; // exclusive
@@ -204,9 +204,9 @@ function multinet_parse_extra(string $extraParams, string $primary, array $expec
         array_slice($tokens, 0, $startIdx),
         array_slice($tokens, $endIdx)
     );
-    $remaining = implode(' ', array_map('multinet_shell_quote_if_needed', $remainingTokens));
+    $remaining = implode(' ', array_map('netman_shell_quote_if_needed', $remainingTokens));
 
-    $manuallyManaged = !multinet_rows_equal($rows, $expected);
+    $manuallyManaged = !netman_rows_equal($rows, $expected);
 
     return [
         'remaining' => $remaining,
@@ -217,7 +217,7 @@ function multinet_parse_extra(string $extraParams, string $primary, array $expec
     ];
 }
 
-function multinet_shell_quote_if_needed(string $tok): string
+function netman_shell_quote_if_needed(string $tok): string
 {
     if ($tok === '' || preg_match('/[\s"\']/', $tok)) {
         return "'" . str_replace("'", "'\\''", $tok) . "'";
@@ -232,7 +232,7 @@ function multinet_shell_quote_if_needed(string $tok): string
  * primaries don't support it — see docs/SPEC.md fact 3 and the live probe
  * recorded in CLAUDE.md); when false, $primaryMac is ignored.
  */
-function multinet_build_network_run(string $primary, array $rows, ?string $primaryMac, bool $primarySupportsMac): string
+function netman_build_network_run(string $primary, array $rows, ?string $primaryMac, bool $primarySupportsMac): string
 {
     $parts = [];
     if ($primaryMac && $primarySupportsMac) {
@@ -241,7 +241,7 @@ function multinet_build_network_run(string $primary, array $rows, ?string $prima
         $parts[] = '--network ' . $primary;
     }
     foreach ($rows as $row) {
-        $row = multinet_row_defaults($row);
+        $row = netman_row_defaults($row);
         $kv = ['name=' . $row['network']];
         if (!empty($row['ip'])) {
             $kv[] = 'ip=' . $row['ip'];
@@ -257,7 +257,7 @@ function multinet_build_network_run(string $primary, array $rows, ?string $prima
     return implode(' ', $parts);
 }
 
-function multinet_serialize_extra(string $remaining, string $networkRun): string
+function netman_serialize_extra(string $remaining, string $networkRun): string
 {
     $remaining = trim($remaining);
     return $remaining === '' ? $networkRun : $remaining . ' ' . $networkRun;
@@ -265,12 +265,12 @@ function multinet_serialize_extra(string $remaining, string $networkRun): string
 
 /**
  * Parse PostArgs for our `&& docker network connect ... <containerName>`
- * chain. Same return shape as multinet_parse_extra (no primary_mac — the
+ * chain. Same return shape as netman_parse_extra (no primary_mac — the
  * PostArgs path never carries a MAC, see docs/SPEC.md fact 5/§34).
  */
-function multinet_parse_post(string $postArgs, string $containerName, array $expected): array
+function netman_parse_post(string $postArgs, string $containerName, array $expected): array
 {
-    $tokens = multinet_tokenize($postArgs);
+    $tokens = netman_tokenize($postArgs);
     $n = count($tokens);
 
     $chainStart = null;
@@ -324,7 +324,7 @@ function multinet_parse_post(string $postArgs, string $containerName, array $exp
         if ($net === null || $ctn !== $containerName) {
             break;
         }
-        $rows[] = multinet_row_defaults(['network' => $net, 'ip' => $ip, 'alias' => $alias]);
+        $rows[] = netman_row_defaults(['network' => $net, 'ip' => $ip, 'alias' => $alias]);
         $chainEnd = $k + 2;
         $j = $chainEnd;
     }
@@ -343,9 +343,9 @@ function multinet_parse_post(string $postArgs, string $containerName, array $exp
         array_slice($tokens, 0, $chainStart),
         array_slice($tokens, $chainEnd)
     );
-    $remaining = implode(' ', array_map('multinet_shell_quote_if_needed', $remainingTokens));
+    $remaining = implode(' ', array_map('netman_shell_quote_if_needed', $remainingTokens));
 
-    $manuallyManaged = !multinet_rows_equal($rows, $expected);
+    $manuallyManaged = !netman_rows_equal($rows, $expected);
 
     return [
         'remaining' => $remaining,
@@ -356,11 +356,11 @@ function multinet_parse_post(string $postArgs, string $containerName, array $exp
     ];
 }
 
-function multinet_build_connect_chain(string $containerName, array $rows): string
+function netman_build_connect_chain(string $containerName, array $rows): string
 {
     $parts = [];
     foreach ($rows as $row) {
-        $row = multinet_row_defaults($row);
+        $row = netman_row_defaults($row);
         $cmd = ['docker', 'network', 'connect'];
         if (!empty($row['ip'])) {
             $cmd[] = '--ip';
@@ -384,7 +384,7 @@ function multinet_build_connect_chain(string $containerName, array $rows): strin
  * prefixed with " && " so it's a no-op if PostArgs was empty, and correct
  * shell chaining if not.
  */
-function multinet_serialize_post(string $remaining, string $chain): string
+function netman_serialize_post(string $remaining, string $chain): string
 {
     $remaining = rtrim($remaining);
     if ($chain === '') {
@@ -395,33 +395,33 @@ function multinet_serialize_post(string $remaining, string $chain): string
 
 // ---- state.json -----------------------------------------------------
 
-function multinet_state_load(): array
+function netman_state_load(): array
 {
-    if (!is_file(MULTINET_STATE_PATH)) {
+    if (!is_file(NETMAN_STATE_PATH)) {
         return [];
     }
-    $json = file_get_contents(MULTINET_STATE_PATH);
+    $json = file_get_contents(NETMAN_STATE_PATH);
     $data = json_decode($json ?: '{}', true);
     return is_array($data) ? $data : [];
 }
 
-function multinet_state_save(array $state): void
+function netman_state_save(array $state): void
 {
-    $dir = dirname(MULTINET_STATE_PATH);
+    $dir = dirname(NETMAN_STATE_PATH);
     if (!is_dir($dir)) {
         mkdir($dir, 0755, true);
     }
-    $tmp = MULTINET_STATE_PATH . '.tmp';
+    $tmp = NETMAN_STATE_PATH . '.tmp';
     file_put_contents($tmp, json_encode($state, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
-    rename($tmp, MULTINET_STATE_PATH);
+    rename($tmp, NETMAN_STATE_PATH);
 }
 
-function multinet_state_get(array $state, string $containerName): array
+function netman_state_get(array $state, string $containerName): array
 {
     return $state[$containerName]['rows'] ?? [];
 }
 
-function multinet_state_set(array $state, string $containerName, string $primary, string $path, array $rows): array
+function netman_state_set(array $state, string $containerName, string $primary, string $path, array $rows): array
 {
     $state[$containerName] = ['primary' => $primary, 'path' => $path, 'rows' => $rows];
     return $state;
@@ -429,30 +429,30 @@ function multinet_state_set(array $state, string $containerName, string $primary
 
 // ---- template XML I/O -------------------------------------------------
 
-const MULTINET_TEMPLATES_DIR = '/boot/config/plugins/dockerMan/templates-user';
+const NETMAN_TEMPLATES_DIR = '/boot/config/plugins/dockerMan/templates-user';
 
-function multinet_list_templates(): array
+function netman_list_templates(): array
 {
-    $files = glob(MULTINET_TEMPLATES_DIR . '/my-*.xml') ?: [];
+    $files = glob(NETMAN_TEMPLATES_DIR . '/my-*.xml') ?: [];
     sort($files);
     return $files;
 }
 
 /** Mirrors Helpers.php's xml_encode/xml_decode exactly (ENT_XML1 htmlspecialchars). */
-function multinet_xml_encode(string $s): string
+function netman_xml_encode(string $s): string
 {
     return htmlspecialchars($s, ENT_XML1, 'UTF-8');
 }
 
-function multinet_xml_decode(string $s): string
+function netman_xml_decode(string $s): string
 {
     return strval(html_entity_decode($s, ENT_XML1, 'UTF-8'));
 }
 
 /** Read a template, return ['xml'=>SimpleXMLElement, 'path'=>str] or null. */
-function multinet_read_template(string $containerName): ?array
+function netman_read_template(string $containerName): ?array
 {
-    $path = MULTINET_TEMPLATES_DIR . '/my-' . $containerName . '.xml';
+    $path = NETMAN_TEMPLATES_DIR . '/my-' . $containerName . '.xml';
     if (!is_file($path)) {
         return null;
     }
@@ -472,7 +472,7 @@ function multinet_read_template(string $containerName): ?array
 // ---- validation --------------------------------------------------------
 
 /** True if $ip (dotted IPv4) falls inside $cidr (e.g. "172.18.0.0/16"). */
-function multinet_ip_in_subnet(string $ip, string $cidr): bool
+function netman_ip_in_subnet(string $ip, string $cidr): bool
 {
     if (strpos($cidr, '/') === false) {
         return false;
@@ -488,13 +488,13 @@ function multinet_ip_in_subnet(string $ip, string $cidr): bool
     return ($ipLong & $mask) === ($subnetLong & $mask);
 }
 
-function multinet_write_template_field(string $path, string $element, string $newValue): bool
+function netman_write_template_field(string $path, string $element, string $newValue): bool
 {
     $contents = file_get_contents($path);
     if ($contents === false) {
         return false;
     }
-    $encoded = multinet_xml_encode($newValue);
+    $encoded = netman_xml_encode($newValue);
     $pattern = '#<' . $element . '(\s[^>]*)?(/>|>.*?</' . $element . '>)#s';
     if (!preg_match($pattern, $contents)) {
         return false;

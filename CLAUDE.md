@@ -1,8 +1,26 @@
-# unraid-multinet — CLAUDE.md
+# Docker NetMan — CLAUDE.md
 
 Concise design record, not a diary. Built end to end from `docs/SPEC.md` (kept in the repo for
 reference — read it first for full rationale; this file condenses it plus what building it
 actually confirmed).
+
+## Name
+
+Shipped 0.1.0/0.2.0 as **unraid-multinet** (repo `kmbrimble/unraid-multinet`, plugin id
+`unraid-multinet`, page `MultiNet.page`/`MultiNetInject.page`, JS global `window.multinet`).
+Renamed to **Docker NetMan** at 0.3.0 (repo `kmbrimble/unraid-docker-netman`, plugin id
+`docker.netman`, `DockerNetMan.page`/`DockerNetManInject.page`, JS global
+`window.dockerNetman`) because "MultiNet" collides with an existing Community Applications
+plugin, "Docker Networks" by mstrhakr (`github.com/mstrhakr/docker.networks`) — see
+README.md "Compared to Docker Networks (mstrhakr)" for how the two differ (in short: this
+plugin persists a fixed IP through `docker network connect` where mstrhakr's
+`dockerNetworksBuildTemplateConnectCmd` omits `--ip`, has an Extra Parameters path theirs
+doesn't, and injects into the Add/Update Container form theirs doesn't). The old repo is
+archived, with its README pointing here — the install URL there still resolves, just to a
+notice, not silently to nothing. Everything below uses the current (0.3.0) names throughout,
+including in descriptions of things that happened before the rename, since the old names no
+longer exist anywhere in this repo — the historical facts (what was tried, what broke, what
+fixed it) are unchanged by what the files were called at the time.
 
 ## What this is
 
@@ -25,29 +43,29 @@ reinstall/force-update/"Previous Apps" — no runtime hook, no plugin database).
   and both apply correctly. Tried against `br0` (ipvlan) first — Docker itself rejects any MAC
   on an ipvlan network ("ipvlan interfaces do not support custom mac address assignment"),
   independent of which path emits it. `include/api.php` gates MAC emission on the primary's
-  driver being `bridge` (`multinet_docker_network_driver() === 'bridge'`) before honoring it.
+  driver being `bridge` (`netman_docker_network_driver() === 'bridge'`) before honoring it.
 - **Primary is `bridge`/`host`/`none`/`container:*`**: block goes in **PostArgs**, as
   `&& docker network connect [--ip X] [--alias Y] <net> <containerName>` chunks, chained with
   `&&` and appended after whatever PostArgs the user already has (dockerMan appends PostArgs
   verbatim after the image — chaining with `&&` is correct whether or not the user's own
   PostArgs is empty). MAC is not supported on this path (`docker network connect` has no
   `--mac-address` — confirmed via `--help`); the UI disables the MAC field here.
-- **`state.json`** (`/boot/config/plugins/unraid-multinet/state.json`) records what the plugin
+- **`state.json`** (`/boot/config/plugins/docker.netman/state.json`) records what the plugin
   last wrote per container, keyed by name. The template is always re-parsed as truth; state.json
   only disambiguates "the plugin's own block" from something hand-typed. If a `--network` run
   or `docker network connect` chain is found that doesn't match state.json's record for that
   container (including "no record at all"), the container is **manually managed**: `api.php`'s
   `save` action refuses to rewrite that field and reports it back to the UI, which shows a red
   chip and tells the user to remove the hand-written block first or use the other path.
-- Parsing/building both live in `plugin/include/multinet.php` (server, PHP) and
-  `plugin/multinet-core.js` (client + node, same logic, UMD-wrapped so the browser injector and
+- Parsing/building both live in `plugin/include/netman.php` (server, PHP) and
+  `plugin/docker-netman-core.js` (client + node, same logic, UMD-wrapped so the browser injector and
   `node tests/js.test.js` share one implementation). Both are pure, side-effect-free, and
   round-trip: parse → edit → serialize → parse is idempotent (tested).
 
 ## Injection mechanism
 
-- `MultiNet.page`: `Menu="Utilities"` page under Settings (`Title="MultiNet"`, reachable at
-  `Settings/MultiNet` — same pattern `unraid-secretsman`'s `SecretsMan.page` uses). **Not** a
+- `DockerNetMan.page`: `Menu="Utilities"` page under Settings (`Title="Docker NetMan"`, reachable at
+  `Settings/DockerNetMan` — same pattern `unraid-secretsman`'s `SecretsMan.page` uses). **Not** a
   Docker tab: `Menu="Docker:3"` was tried first and doesn't work — `DockerContainers.page`
   (the Docker section's `Menu="Docker:1"` anchor) sets `Tabs="false"`, and
   `MainContentTabless.php`'s handling of an untabbed menu group is to concatenate every page in
@@ -58,15 +76,15 @@ reinstall/force-update/"Previous Apps" — no runtime hook, no plugin database).
   first shipped as `Menu="Docker:3"`, and a real-browser screenshot showed the whole Networks UI
   concatenated below the Docker page's own ADD CONTAINER/START ALL button row. Fixed in 0.2.0 by
   moving the whole UI off `/Docker` entirely and injecting a single small button on the Docker
-  page instead (via `MultiNetInject.page`, matched on `^/Docker` excluding the Add/Update
+  page instead (via `DockerNetManInject.page`, matched on `^/Docker` excluding the Add/Update
   Container paths, appended into `.js-actions` next to the stock Add Container button) that
-  links to `/Settings/MultiNet`.
+  links to `/Settings/DockerNetMan`.
 - The page-lookup mechanism means the URL prefix before the page's filename is cosmetic — any
   page named `X.page` is reachable at `/<anything>/X` as long as `basename()` of the path
-  matches `X`. `Settings/MultiNet` works because `unraid-secretsman` already proved that's the
+  matches `X`. `Settings/DockerNetMan` works because `unraid-secretsman` already proved that's the
   convention the Settings nav actually links to for `Menu="Utilities"` pages; nothing about the
   routing itself required that specific prefix.
-- `MultiNetInject.page`: `Menu="Buttons:5"`, `Link="nav-user"`, `Markdown="false"` — a pure
+- `DockerNetManInject.page`: `Menu="Buttons:5"`, `Link="nav-user"`, `Markdown="false"` — a pure
   `<script>` injector, the supported non-patching vehicle (`DefaultPageLayout.php` evals every
   `Menu="Buttons"` page in `<head>` on every page load; `ipmi`'s `IPMIButton.page` is the stock
   precedent). Only acts when `location.pathname` matches `^/Docker/(AddContainer|UpdateContainer)`.
@@ -78,10 +96,15 @@ reinstall/force-update/"Previous Apps" — no runtime hook, no plugin database).
   `contPostArgs` there, before dockerMan reads them. Fails soft throughout: endpoint unreachable
   or the row not found both degrade to "no section, form submits untouched" rather than blocking
   submit — nothing here throws past a try/catch on the compose step.
-- **Not verified in a real browser** — this container has none. `window.multinet.inject()` is
-  exposed for the owner (or a future session with one) to re-run and inspect in devtools; the
-  DOM insertion point (`closest('dl')` / `closest('div')` fallback chain) is a best-effort read
-  of `CreateDocker.php`'s markdown-generated markup, not something rendered and checked here.
+- **This container still has no browser** — every fix above (CSRF, tab placement, the
+  `rowsEqual(null)` crash, button width, row stacking) was diagnosed from the owner's real-
+  browser report and root-caused/fixed/tested server-side (node/PHP unit tests, `curl` against
+  the live host), not by this session rendering the page itself. `window.dockerNetman.inject()`
+  remains exposed for the owner to re-run and inspect in devtools. The DOM insertion point
+  (`closest('dl')` / `closest('div')` fallback chain in `insertBlock()`) is unchanged since
+  0.1.0 and still a best-effort read of `CreateDocker.php`'s markdown-generated markup — it
+  hasn't itself been reported broken, but it's also never been confirmed correct from this
+  side.
 
 ## CSRF
 
@@ -97,14 +120,14 @@ a hypothetical — its `store_api.php` has the same comment). Trust the platform
 either way calls `csrf_terminate()`, which just `exit`s with no output, no error page). Real
 value lives in `state/var.ini`, and `webGui/include/DefaultPageLayout/HeadInlineJS.php`
 declares it as a global JS var (`var csrf_token = "...";`) on every page load, precisely so
-page scripts can read it. `MultiNet.page` gets this for free — it uses jQuery `$.post`, and
+page scripts can read it. `DockerNetMan.page` gets this for free — it uses jQuery `$.post`, and
 Unraid's global `$.ajaxPrefilter` appends `csrf_token` to every jQuery AJAX call automatically.
-**`MultiNetInject.page` does not get this for free** — it's a plain injected `<script>` making
+**`DockerNetManInject.page` does not get this for free** — it's a plain injected `<script>` making
 its own `XMLHttpRequest` calls, so the prefilter never touches them. First shipped without
 sending the token at all: `fetchNetworks()` got a silent empty body back (the terminate path,
 not a visible error), which the injector correctly treated as "endpoint unreachable" — a
 real-browser test confirmed this live (endpoint appeared unreachable in devtools). Fixed by a
-shared `mnPost()` helper that sends the token BOTH ways (belt and braces): as `X-CSRF-Token` and
+shared `dnmPost()` helper that sends the token BOTH ways (belt and braces): as `X-CSRF-Token` and
 as a `csrf_token` body field, reading `window.csrf_token`. **Verified against the real host, not
 just read from source**: reused an active root session cookie (`/var/lib/php/sess_*`, matched
 to its `unraid_<md5(host)>` cookie name) to `curl` `include/api.php` directly — same session
@@ -112,6 +135,48 @@ without a CSRF token gets `200` with an **empty body** (confirming `csrf_termina
 failure shape); the same session with `X-CSRF-Token` set gets `200` with the real JSON payload.
 **Any future page here that talks to `include/api.php` outside jQuery needs this same
 treatment** — it's not specific to the Add/Update Container injector.
+
+## 0.3.0 real-browser fixes
+
+Real-browser testing (owner, 0.2.0) found a fourth bug beyond the rename's own scope:
+
+- **`rowsEqual(a, b)` crashed when `b` (expected) was `null`** — `TypeError: Cannot read
+  properties of null (reading 'length')`. `DockerNetManInject.page`'s `parseExistingIntoState()`
+  passes `expected=null` on the Update Container page (it has no `state.json` client-side, so
+  there's nothing meaningful to pass — an earlier version passed `[]`, which is wrong for a
+  different reason: it made every container with existing rows look manually-managed the
+  moment `expected` wasn't available, since `[]` means "expected nothing"). The throw aborted
+  `parsePost()`/`parseExtra()` entirely, so a real, correctly-written row (confirmed present in
+  both the template and `state.json`) silently vanished from the edit page — the bug looked
+  like the feature didn't work at all, when the underlying design was fine. Reproduced before
+  the fix:
+  ```
+  $ node -e 'var m=require("./plugin/docker-netman-core.js"); m.parsePost("&& docker network connect --ip 172.18.0.3 proxynet terrible-butler","terrible-butler",null)'
+  Uncaught TypeError: Cannot read properties of null (reading 'length')
+  ```
+  Fixed: `rowsEqual` treats `b == null` as "unknown — trust what was parsed" (returns `true`,
+  so `manually_managed` comes out `false`), and the injector now correctly passes `null` (not
+  `[]`) for both `parseExtra`/`parsePost` calls. After the fix, the same call:
+  ```
+  $ node -e 'var m=require("./plugin/docker-netman-core.js"); console.log(JSON.stringify(m.parsePost("&& docker network connect --ip 172.18.0.3 proxynet terrible-butler","terrible-butler",null)))'
+  {"remaining":"","primary_mac":null,"rows":[{"network":"proxynet","ip":"172.18.0.3","alias":null,"mac":null}],"found":true,"manually_managed":false}
+  ```
+  **Checked the PHP side (`include/netman.php`) for the same assumption — not present.**
+  `netman_rows_equal(array $a, array $b)` is strictly typed and every real caller
+  (`include/api.php`, both `save` and the container-summary path) always passes a real array
+  from `netman_state_get()`, which itself always returns `[]` rather than `null` when there's
+  no record. The null-expected case is specific to the client, which is the only caller with no
+  `state.json` to read at all. `tests/js.test.js` covers `expected=null` for both paths plus
+  this exact real-world string.
+- **The "Add network" button stretched to the full page width** on a wide viewport — stock
+  dockerMan CSS applies `input`/`select`/`button { width: 100% }` inside a form row, and a
+  narrow test window had hidden this by making 100% look reasonable by coincidence. Same class
+  of bug as `unraid-secretsman`'s Browse-button overflow fix (see its CHANGES). Fixed with an
+  explicit `.dnm-block button { width: auto }` override in `DockerNetManInject.page`.
+- **Per-row fields ran across the page** (network/IP/alias/MAC/Remove in one flex strip) instead
+  of stacking down it — unusable on a phone-width viewport. Changed to one labelled block per
+  field, matching dockerMan's own dl/dt/dd rhythm, stacked vertically within each row's own
+  bordered block.
 
 ## Known limitations (see README.md for the user-facing version)
 
@@ -198,6 +263,9 @@ Confirmed end to end on the real host, not simulated:
 - Template backup: `/boot/config/plugins/unraid-multinet/backup/my-terrible-butler.xml.bak`,
   confirmed byte-identical to the pre-edit original via `md5sum` before any write. Not needed
   in the end (no rollback required) — left in place per the spec ("back up... then...").
+  Predates the 0.3.0 rename and was made under the plugin's old flash path; the rename's
+  state.json migration (see "Name" above) doesn't move it — it's just a leftover backup file,
+  not something anything reads, so it staying at the old path is harmless.
 
 ## Host facts used here (see `/projects/unraid-ops/host-facts.md` for the full set)
 

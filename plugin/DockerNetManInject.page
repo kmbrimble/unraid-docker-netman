@@ -3,11 +3,23 @@ Link="nav-user"
 Markdown="false"
 ---
 <style>
-.mn-block { margin: 0.5em 0; }
-.mn-block .mn-row { display:flex; gap:6px; margin-bottom:4px; align-items:center; }
-.mn-block .mn-row input[type=text] { width: 22%; }
-.mn-block .mn-frag { font-family: monospace; font-size: 0.85em; color: #888; word-break: break-all; }
-.mn-block .mn-err { color: #c62828; }
+.dnm-block { margin: 0.5em 0; }
+/* Stock dockerMan CSS applies input/select/button {width:100%} to anything inside
+   a form row (dd) — without an override here that stretches the "Add network"
+   button across the full page width on a wide viewport (narrow windows hid this
+   by making 100% look reasonable by coincidence). Constrain explicitly rather
+   than inherit the stock rule, same class of fix as secretsman's Browse-button
+   overflow (see its CHANGES). */
+.dnm-block button, .dnm-block input[type=button] { width: auto; }
+/* Rows stack DOWN the page (each field its own labelled line), not across —
+   matches dockerMan's own dl/dt/dd form rhythm and keeps this usable on a
+   phone-width viewport, where a flex row of four inputs had no room to breathe. */
+.dnm-block .dnm-row { display: block; border: 1px solid #444; border-radius: 4px; padding: 8px; margin-bottom: 8px; }
+.dnm-block .dnm-field { display: block; margin-bottom: 6px; }
+.dnm-block .dnm-field label { display: block; font-size: 0.85em; color: #aaa; margin-bottom: 2px; }
+.dnm-block .dnm-field input[type=text], .dnm-block .dnm-field select { width: 100%; max-width: 320px; }
+.dnm-block .dnm-frag { font-family: monospace; font-size: 0.85em; color: #888; word-break: break-all; }
+.dnm-block .dnm-err { color: #c62828; }
 </style>
 <script>
 (function () {
@@ -15,7 +27,7 @@ Markdown="false"
   //  - Add/Update Container: inject the "Additional networks" section
   //    into the form itself.
   //  - Anywhere else under /Docker (the container list): inject a single
-  //    button that links to the plugin's own page (Settings/MultiNet).
+  //    button that links to the plugin's own page (Settings/DockerNetMan).
   //    The full networks/containers UI used to live on a Menu="Docker:3"
   //    page, on the theory that it would render as its own tab — it
   //    doesn't: DockerContainers.page (Menu="Docker:1") sets Tabs="false",
@@ -24,7 +36,7 @@ Markdown="false"
   //    separate tabs. That put the whole Networks UI inline underneath
   //    the container list. Moved to its own Menu="Utilities" page instead
   //    (matching unraid-secretsman's SecretsMan.page precedent — reachable
-  //    at Settings/MultiNet) and this button is the only thing that now
+  //    at Settings/DockerNetMan) and this button is the only thing that now
   //    appears on /Docker itself.
   var onForm = /^\/Docker\/(AddContainer|UpdateContainer)/.test(location.pathname);
   var onDockerList = !onForm && /^\/Docker(\/|$)/.test(location.pathname);
@@ -33,13 +45,13 @@ Markdown="false"
   if (onDockerList) {
     function insertDockerButton() {
       var actions = document.querySelector('.js-actions');
-      if (!actions || document.getElementById('mn-open-multinet')) return;
+      if (!actions || document.getElementById('dnm-open-netman')) return;
       var btn = document.createElement('input');
       btn.type = 'button';
-      btn.id = 'mn-open-multinet';
-      btn.value = 'MultiNet';
-      btn.title = 'Manage additional Docker networks (unraid-multinet)';
-      btn.onclick = function () { location.href = '/Settings/MultiNet'; };
+      btn.id = 'dnm-open-netman';
+      btn.value = 'Docker NetMan';
+      btn.title = 'Manage additional Docker networks (Docker NetMan)';
+      btn.onclick = function () { location.href = '/Settings/DockerNetMan'; };
       actions.appendChild(btn);
     }
     if (document.readyState === 'loading') {
@@ -50,15 +62,15 @@ Markdown="false"
     return;
   }
 
-  var API = '/plugins/unraid-multinet/include/api.php';
-  var CORE = '/plugins/unraid-multinet/multinet-core.js';
+  var API = '/plugins/docker.netman/include/api.php';
+  var CORE = '/plugins/docker.netman/docker-netman-core.js';
 
   function loadCore(cb) {
-    if (window.multinet) { cb(); return; }
+    if (window.dockerNetman) { cb(); return; }
     var s = document.createElement('script');
     s.src = CORE;
     s.onload = cb;
-    s.onerror = function () { console.error('unraid-multinet: failed to load multinet-core.js'); };
+    s.onerror = function () { console.error('Docker NetMan: failed to load docker-netman-core.js'); };
     document.head.appendChild(s);
   }
 
@@ -72,10 +84,10 @@ Markdown="false"
   // every plugin POST and accepts the token via EITHER $_POST['csrf_token'] or the
   // X-CSRF-Token header — send both (belt and braces) rather than assume which one a
   // future change to this handler prefers. HeadInlineJS.php declares a global
-  // `csrf_token` JS var on every page (this is how MultiNet.page's jQuery calls get it
+  // `csrf_token` JS var on every page (this is how DockerNetMan.page's jQuery calls get it
   // too, via $.ajaxPrefilter) — read it the same way here since this page runs as a
   // plain script, not jQuery.
-  function mnPost(action, data, cb) {
+  function dnmPost(action, data, cb) {
     var token = (typeof csrf_token !== 'undefined' && csrf_token) ? csrf_token : (window.csrf_token || '');
     data = data || {};
     data.action = action;
@@ -95,7 +107,7 @@ Markdown="false"
   }
 
   function fetchNetworks(cb) {
-    mnPost('networks', {}, function (resp) { cb(resp && resp.ok ? resp.networks : null); });
+    dnmPost('networks', {}, function (resp) { cb(resp && resp.ok ? resp.networks : null); });
   }
 
   function h(s) {
@@ -111,12 +123,12 @@ Markdown="false"
     }).map(function (n) {
       return '<option value="' + h(n.name) + '"' + (n.name === row.network ? ' selected' : '') + '>' + h(n.name) + '</option>';
     }).join('');
-    return '<div class="mn-row" data-idx="' + idx + '">' +
-      '<select class="mn-f-network"><option value="">(select network)</option>' + options + '</select>' +
-      '<input type="text" class="mn-f-ip" placeholder="Fixed IP (optional)" value="' + h(row.ip) + '">' +
-      '<input type="text" class="mn-f-alias" placeholder="Alias (optional)" value="' + h(row.alias) + '">' +
-      '<input type="text" class="mn-f-mac" placeholder="MAC (optional)" value="' + h(row.mac) + '">' +
-      '<button type="button" class="mn-remove-row">Remove</button>' +
+    return '<div class="dnm-row" data-idx="' + idx + '">' +
+      '<div class="dnm-field"><label>Network</label><select class="dnm-f-network"><option value="">(select network)</option>' + options + '</select></div>' +
+      '<div class="dnm-field"><label>Fixed IP</label><input type="text" class="dnm-f-ip" placeholder="optional" value="' + h(row.ip) + '"></div>' +
+      '<div class="dnm-field"><label>Alias</label><input type="text" class="dnm-f-alias" placeholder="optional" value="' + h(row.alias) + '"></div>' +
+      '<div class="dnm-field"><label>MAC</label><input type="text" class="dnm-f-mac" placeholder="optional" value="' + h(row.mac) + '"></div>' +
+      '<button type="button" class="dnm-remove-row">Remove</button>' +
       '</div>';
   }
 
@@ -126,19 +138,19 @@ Markdown="false"
   }
 
   function currentPath() {
-    return window.multinet ? multinet.choosePath(currentPrimary()) : 'extra';
+    return window.dockerNetman ? dockerNetman.choosePath(currentPrimary()) : 'extra';
   }
 
   function readRows($block) {
     var rows = [];
-    $block.querySelectorAll('.mn-row').forEach(function (r) {
-      var net = r.querySelector('.mn-f-network').value.trim();
+    $block.querySelectorAll('.dnm-row').forEach(function (r) {
+      var net = r.querySelector('.dnm-f-network').value.trim();
       if (!net) return;
       rows.push({
         network: net,
-        ip: r.querySelector('.mn-f-ip').value.trim() || null,
-        alias: r.querySelector('.mn-f-alias').value.trim() || null,
-        mac: r.querySelector('.mn-f-mac').value.trim() || null
+        ip: r.querySelector('.dnm-f-ip').value.trim() || null,
+        alias: r.querySelector('.dnm-f-alias').value.trim() || null,
+        mac: r.querySelector('.dnm-f-mac').value.trim() || null
       });
     });
     return rows;
@@ -152,20 +164,20 @@ Markdown="false"
     var rowsHtml = state.rows.map(function (r, i) { return rowHtml(r, i, state.networks, currentPrimary()); }).join('');
     var fragment = computeFragment();
     $block.innerHTML =
-      '<div class="mn-rows">' + rowsHtml + '</div>' +
-      '<button type="button" id="mn-add-row">Add network</button>' +
-      ' <span class="mn-frag">path: ' + h(path) + ' &mdash; ' + h(fragment) + '</span>';
+      '<div class="dnm-rows">' + rowsHtml + '</div>' +
+      '<button type="button" id="dnm-add-row">Add network</button>' +
+      ' <span class="dnm-frag">path: ' + h(path) + ' &mdash; ' + h(fragment) + '</span>';
     if (macDisabled) {
-      $block.querySelectorAll('.mn-f-mac').forEach(function (el) {
+      $block.querySelectorAll('.dnm-f-mac').forEach(function (el) {
         el.disabled = true;
         el.title = 'MAC is not supported on the PostArgs path (primary is bridge/host/none/container:*)';
       });
     }
-    $block.querySelector('#mn-add-row').addEventListener('click', function () {
+    $block.querySelector('#dnm-add-row').addEventListener('click', function () {
       state.rows.push({network: '', ip: '', alias: '', mac: ''});
       renderBlock($block);
     });
-    $block.querySelectorAll('.mn-remove-row').forEach(function (btn, i) {
+    $block.querySelectorAll('.dnm-remove-row').forEach(function (btn, i) {
       btn.addEventListener('click', function () {
         state.rows.splice(i, 1);
         renderBlock($block);
@@ -180,9 +192,9 @@ Markdown="false"
   }
 
   function computeFragment() {
-    if (!window.multinet) return '';
+    if (!window.dockerNetman) return '';
     var primary = currentPrimary();
-    var path = multinet.choosePath(primary);
+    var path = dockerNetman.choosePath(primary);
     if (path === 'extra') {
       var macEl = document.querySelector('input[name="contMyMAC"]');
       var mac = macEl ? macEl.value.trim() : '';
@@ -191,10 +203,10 @@ Markdown="false"
       // another round trip, so this preview is conservative and always
       // shows it included — api.php's save/preview actions are the real
       // source of truth and gate on the actual driver.
-      return multinet.buildNetworkRun(primary, state.rows, mac || null, true);
+      return dockerNetman.buildNetworkRun(primary, state.rows, mac || null, true);
     }
     var name = (document.querySelector('input[name="contName"]') || {}).value || '';
-    var chain = multinet.buildConnectChain(name, state.rows);
+    var chain = dockerNetman.buildConnectChain(name, state.rows);
     return chain === '' ? '' : '&& ' + chain;
   }
 
@@ -203,15 +215,15 @@ Markdown="false"
     var name = (document.querySelector('input[name="contName"]') || {}).value || '';
     var extraEl = document.querySelector('input[name="contExtraParams"]');
     var postEl = document.querySelector('input[name="contPostArgs"]');
-    var path = multinet.choosePath(primary);
+    var path = dockerNetman.choosePath(primary);
     if (path === 'extra' && extraEl) {
-      var parsed = multinet.parseExtra(extraEl.value, primary, []);
+      var parsed = dockerNetman.parseExtra(extraEl.value, primary, null);
       if (parsed.found && !parsed.manually_managed) {
         state.rows = parsed.rows;
         extraEl.value = parsed.remaining; // hide our block from the visible field
       }
     } else if (path === 'post' && postEl) {
-      var parsedP = multinet.parsePost(postEl.value, name, []);
+      var parsedP = dockerNetman.parsePost(postEl.value, name, null);
       if (parsedP.found && !parsedP.manually_managed) {
         state.rows = parsedP.rows;
         postEl.value = parsedP.remaining;
@@ -224,15 +236,15 @@ Markdown="false"
     var name = (document.querySelector('input[name="contName"]') || {}).value || '';
     var extraEl = document.querySelector('input[name="contExtraParams"]');
     var postEl = document.querySelector('input[name="contPostArgs"]');
-    var path = multinet.choosePath(primary);
+    var path = dockerNetman.choosePath(primary);
     if (path === 'extra' && extraEl) {
       var macEl = document.querySelector('input[name="contMyMAC"]');
       var mac = macEl ? macEl.value.trim() : '';
-      var run = multinet.buildNetworkRun(primary, state.rows, mac || null, true);
-      extraEl.value = multinet.serializeExtra(extraEl.value, run);
+      var run = dockerNetman.buildNetworkRun(primary, state.rows, mac || null, true);
+      extraEl.value = dockerNetman.serializeExtra(extraEl.value, run);
     } else if (path === 'post' && postEl) {
-      var chain = multinet.buildConnectChain(name, state.rows);
-      postEl.value = multinet.serializePost(postEl.value, chain);
+      var chain = dockerNetman.buildConnectChain(name, state.rows);
+      postEl.value = dockerNetman.serializePost(postEl.value, chain);
     }
   }
 
@@ -245,7 +257,7 @@ Markdown="false"
     var label = document.createElement('dt');
     label.textContent = 'Additional networks:';
     var body = document.createElement('dd');
-    body.className = 'mn-block';
+    body.className = 'dnm-block';
     if (row.tagName.toLowerCase() === 'dl') {
       wrapper.appendChild(label);
       wrapper.appendChild(body);
@@ -258,11 +270,11 @@ Markdown="false"
 
   function init() {
     var $block = insertBlock();
-    if (!$block) { console.warn('unraid-multinet: could not find contMyMAC row to inject below'); return; }
+    if (!$block) { console.warn('Docker NetMan: could not find contMyMAC row to inject below'); return; }
     loadCore(function () {
       fetchNetworks(function (networks) {
         if (networks === null) {
-          $block.innerHTML = '<span class="mn-err">unraid-multinet: could not reach the plugin endpoint — additional networks unavailable this page load.</span>';
+          $block.innerHTML = '<span class="dnm-err">Docker NetMan: could not reach the plugin endpoint — additional networks unavailable this page load.</span>';
           return;
         }
         state.networks = networks;
@@ -278,17 +290,17 @@ Markdown="false"
         document.addEventListener('submit', function (ev) {
           var form = ev.target;
           if (form && form.querySelector && form.querySelector('input[name="contName"]')) {
-            try { composeBeforeSubmit(); } catch (e) { console.error('unraid-multinet: compose failed, submitting unmodified', e); }
+            try { composeBeforeSubmit(); } catch (e) { console.error('Docker NetMan: compose failed, submitting unmodified', e); }
           }
         }, true);
       });
     });
   }
 
-  // window.multinet.inject() lets the owner re-run this from devtools —
+  // window.dockerNetman.inject() lets the owner re-run this from devtools —
   // useful for testing since this container has no browser to verify the
   // real DOM shape against (see docs/SPEC.md C.2).
-  loadCore(function () { window.multinet.inject = init; });
+  loadCore(function () { window.dockerNetman.inject = init; });
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
