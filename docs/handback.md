@@ -33,27 +33,43 @@ whoever (human or a future session) picks this up next.
 
 ## What's untested
 
-- **Real-browser DOM injection on the Add/Update Container form**
-  (`MultiNetInject.page`) — this dev container has no browser, and the webGui's HTTPS listener
-  (`127.0.0.1:443`, plain HTTP not TLS despite the port number — see `CLAUDE.md` "Host facts")
-  couldn't be driven headlessly with the auth this session had. **Ask the owner to**: open
-  **Docker → Add Container** (or **Update Container** on an existing one, e.g.
-  `terrible-butler`), scroll to the Fixed MAC address row, and confirm:
-  1. An "Additional networks" row appears directly below it, with a network dropdown (populated
-     from the live `docker network ls`, excluding `bridge`/`host`/`none` and the currently
-     selected primary), Fixed IP / Alias / MAC fields, and a live fragment preview.
-  2. Adding a network, filling in an IP, and hitting **Apply** actually writes it (check the
-     resulting template's `ExtraParams`/`PostArgs` over SSH, or reload the Update Container
-     page and confirm the row reappears — the injector is supposed to parse it back out and
-     hide the raw fragment from the visible Extra Parameters/Post Arguments fields).
-  3. If it *doesn't* appear: open devtools and run `window.multinet.inject()` — this is exposed
-     specifically so the injection point can be re-run and inspected without a page reload.
-     `MultiNetInject.page`'s `insertBlock()` uses a `closest('dl')` → `closest('div')` →
-     `parentElement` fallback chain to find `contMyMAC`'s row container — if dockerMan's actual
-     rendered markup doesn't match any of those, that function is the first place to fix.
+Real-browser testing happened in the 0.2.0 session (this dev container still has no browser
+itself — the owner drove it) and found two real bugs, both fixed and re-verified against the
+live host — see "Live verification" below and `CLAUDE.md`'s "Injection mechanism"/"CSRF"
+sections for the full trace:
+
+1. The Networks/Containers UI wasn't reachable as a Docker tab at all — `Menu="Docker:3"` just
+   got concatenated onto the bottom of the Docker page, because that page's `Menu="Docker:1"`
+   anchor sets `Tabs="false"`. Moved to its own `Settings/MultiNet` page (0.1.0 → 0.2.0), with a
+   small button injected on the Docker page linking to it.
+2. `MultiNetInject.page`'s calls to `include/api.php` never sent a CSRF token (jQuery's global
+   `$.ajaxPrefilter` does this for `MultiNet.page` automatically; the injector's own
+   `XMLHttpRequest` calls don't get that for free) — every request silently 0-byte'd out via
+   Unraid's `csrf_terminate()`, which the injector correctly reported as "endpoint unreachable".
+   Fixed by sending `window.csrf_token` as both the `X-CSRF-Token` header and a `csrf_token`
+   body field.
+
+**Still not re-verified in a real browser as of this handback** (fixed based on the owner's
+bug report + this session's own server-side reproduction, not a second round-trip through an
+actual browser): confirm on the owner's next pass that:
+- **Settings → MultiNet** renders both tables correctly (should be unaffected — this only moved
+  where the same markup lives).
+- The **MultiNet** button appears on the Docker page next to Add Container/Start All, and
+  clicking it navigates to `Settings/MultiNet`.
+- The Docker page itself no longer shows any of the old inline networks/containers UI.
+- The Add/Update Container form's "Additional networks" section still works exactly as before
+  (this session didn't touch `composeBeforeSubmit()`/`parseExistingIntoState()`/`insertBlock()`,
+  only `fetchNetworks()`'s transport) — but now the network dropdown should actually populate,
+  since that's the CSRF fix's direct effect. If it *still* doesn't appear: open devtools and run
+  `window.multinet.inject()` — exposed specifically so the injection point can be re-run and
+  inspected without a page reload. `insertBlock()`'s `closest('dl')` → `closest('div')` →
+  `parentElement` fallback chain to find `contMyMAC`'s row container is still unverified against
+  dockerMan's actual rendered markup; if it doesn't land in the right place, that function is
+  the first thing to fix.
 - **The Networks tab's "create network" form** (ipvlan/macvlan with a parent interface) has
   unit-tested serialization underneath (`multinet_docker_network_create()`) but the form itself
-  hasn't been clicked through in a browser either — same blocker as above.
+  still hasn't been clicked through end-to-end (create a real scratch network via the UI, confirm
+  it appears, delete it).
 
 ## How to use it
 

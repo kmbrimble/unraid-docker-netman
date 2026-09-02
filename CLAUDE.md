@@ -46,7 +46,26 @@ reinstall/force-update/"Previous Apps" — no runtime hook, no plugin database).
 
 ## Injection mechanism
 
-- `MultiNet.page`: `Menu="Docker:3"` tab. Plain page, own JS, talks to `include/api.php`.
+- `MultiNet.page`: `Menu="Utilities"` page under Settings (`Title="MultiNet"`, reachable at
+  `Settings/MultiNet` — same pattern `unraid-secretsman`'s `SecretsMan.page` uses). **Not** a
+  Docker tab: `Menu="Docker:3"` was tried first and doesn't work — `DockerContainers.page`
+  (the Docker section's `Menu="Docker:1"` anchor) sets `Tabs="false"`, and
+  `MainContentTabless.php`'s handling of an untabbed menu group is to concatenate every page in
+  that group onto one page in sequence, not render separate tabs (`webGui/include/PageBuilder.php`
+  confirms `$myPage = $site[basename($path)]` — the URL's last path segment is a bare lookup key
+  into every registered page regardless of directory, and any page sharing a `Menu="Docker:N"`
+  group with an untabbed anchor page renders inline below it, not as a tab). Confirmed live:
+  first shipped as `Menu="Docker:3"`, and a real-browser screenshot showed the whole Networks UI
+  concatenated below the Docker page's own ADD CONTAINER/START ALL button row. Fixed in 0.2.0 by
+  moving the whole UI off `/Docker` entirely and injecting a single small button on the Docker
+  page instead (via `MultiNetInject.page`, matched on `^/Docker` excluding the Add/Update
+  Container paths, appended into `.js-actions` next to the stock Add Container button) that
+  links to `/Settings/MultiNet`.
+- The page-lookup mechanism means the URL prefix before the page's filename is cosmetic — any
+  page named `X.page` is reachable at `/<anything>/X` as long as `basename()` of the path
+  matches `X`. `Settings/MultiNet` works because `unraid-secretsman` already proved that's the
+  convention the Settings nav actually links to for `Menu="Utilities"` pages; nothing about the
+  routing itself required that specific prefix.
 - `MultiNetInject.page`: `Menu="Buttons:5"`, `Link="nav-user"`, `Markdown="false"` — a pure
   `<script>` injector, the supported non-patching vehicle (`DefaultPageLayout.php` evals every
   `Menu="Buttons"` page in `<head>` on every page load; `ipmi`'s `IPMIButton.page` is the stock
@@ -71,6 +90,28 @@ No explicit check in `include/api.php` — `webGui/include/local_prepend.php` (U
 `$_POST['csrf_token']` once it validates. A second check would always see it empty and 403
 every legitimate request (this is `unraid-secretsman`'s own documented mistake-and-revert, not
 a hypothetical — its `store_api.php` has the same comment). Trust the platform's enforcement.
+
+**But the client still has to send the token — nothing does that for you outside jQuery.**
+`local_prepend.php` accepts it two ways: `$_POST['csrf_token']` or the `X-CSRF-Token` header
+(`$csrf_token = $_POST['csrf_token'] ?? ($_SERVER['HTTP_X_CSRF_TOKEN'] ?? null);` — missing
+either way calls `csrf_terminate()`, which just `exit`s with no output, no error page). Real
+value lives in `state/var.ini`, and `webGui/include/DefaultPageLayout/HeadInlineJS.php`
+declares it as a global JS var (`var csrf_token = "...";`) on every page load, precisely so
+page scripts can read it. `MultiNet.page` gets this for free — it uses jQuery `$.post`, and
+Unraid's global `$.ajaxPrefilter` appends `csrf_token` to every jQuery AJAX call automatically.
+**`MultiNetInject.page` does not get this for free** — it's a plain injected `<script>` making
+its own `XMLHttpRequest` calls, so the prefilter never touches them. First shipped without
+sending the token at all: `fetchNetworks()` got a silent empty body back (the terminate path,
+not a visible error), which the injector correctly treated as "endpoint unreachable" — a
+real-browser test confirmed this live (endpoint appeared unreachable in devtools). Fixed by a
+shared `mnPost()` helper that sends the token BOTH ways (belt and braces): as `X-CSRF-Token` and
+as a `csrf_token` body field, reading `window.csrf_token`. **Verified against the real host, not
+just read from source**: reused an active root session cookie (`/var/lib/php/sess_*`, matched
+to its `unraid_<md5(host)>` cookie name) to `curl` `include/api.php` directly — same session
+without a CSRF token gets `200` with an **empty body** (confirming `csrf_terminate()`'s exact
+failure shape); the same session with `X-CSRF-Token` set gets `200` with the real JSON payload.
+**Any future page here that talks to `include/api.php` outside jQuery needs this same
+treatment** — it's not specific to the Add/Update Container injector.
 
 ## Known limitations (see README.md for the user-facing version)
 

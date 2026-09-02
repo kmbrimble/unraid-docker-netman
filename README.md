@@ -34,11 +34,12 @@ than risk clobbering something you wrote.
 
 ## Using it
 
-- **Docker → Networks** tab: manage `docker network` (list/create/delete), and a matrix of
-  every container template with its additional networks editable inline. **Save** rewrites the
-  template; **Apply now** reconciles the running container's live network membership
-  (`docker network connect`/`disconnect`) without recreating it — the automated version of the
-  manual step this plugin exists to replace.
+- **Settings → MultiNet** (also reachable via a small **MultiNet** button next to Add
+  Container/Start All on the Docker page): manage `docker network` (list/create/delete), and a
+  table of every container template with its additional networks editable inline. **Save**
+  rewrites the template; **Apply now** reconciles the running container's live network
+  membership (`docker network connect`/`disconnect`) without recreating it — the automated
+  version of the manual step this plugin exists to replace.
 - **Add/Update Container** form: an "Additional networks" section appears directly below the
   Fixed MAC address row, so you can set them up at the same time as everything else, before
   ever hitting Apply.

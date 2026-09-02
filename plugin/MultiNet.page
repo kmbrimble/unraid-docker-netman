@@ -1,6 +1,7 @@
-Menu="Docker:3"
-Title="Networks"
-Tag="sitemap"
+Menu="Utilities"
+Title="MultiNet"
+Icon="sitemap"
+Tabs="false"
 Markdown="false"
 ---
 <?php
@@ -143,17 +144,20 @@ function mnRenderContainer(c) {
   var macDisabled = c.path === 'post';
   var rowsHtml = c.rows.map(function (r, i) { return mnRowHtml(c.name, r, i, macDisabled); }).join('');
   var fragment = mnComputeFragment(c);
-  var warn = c.manually_managed ? '<p class="mn-err">This container\'s ' + (c.path === 'extra' ? 'ExtraParams' : 'PostArgs') + ' already contains a network block this plugin did not write &mdash; refusing to rewrite it. Remove it by hand first, or use the other path.</p>' : '';
-  return '<div id="mn-ctn-' + h(c.name) + '" style="border-bottom:1px solid #444; padding:8px 0">' +
-    '<b>' + h(c.name) + '</b> &mdash; primary <code>' + h(c.primary) + (c.primary_ip ? ' ' + h(c.primary_ip) : '') + (c.primary_mac ? ' ' + h(c.primary_mac) : '') + '</code> ' +
-    'path: <code>' + h(c.path) + '</code> ' + mnStatusChip(c) +
-    warn +
-    '<div class="mn-rows">' + rowsHtml + '</div>' +
-    '<button type="button" onclick="mnAddRow(\'' + h(c.name) + '\')">Add network</button> ' +
-    '<button type="button" onclick="mnSave(\'' + h(c.name) + '\')">Save</button> ' +
-    '<button type="button" onclick="mnApply(\'' + h(c.name) + '\')">Apply now</button>' +
-    '<div class="mn-fragment" id="mn-frag-' + h(c.name) + '">' + h(fragment) + '</div>' +
-    '</div>';
+  var warn = c.manually_managed ? '<div class="mn-err">' + (c.path === 'extra' ? 'ExtraParams' : 'PostArgs') + ' already contains a network block this plugin did not write &mdash; refusing to rewrite it. Remove it by hand first, or use the other path.</div>' : '';
+  return '<tr id="mn-ctn-' + h(c.name) + '">' +
+    '<td><b>' + h(c.name) + '</b></td>' +
+    '<td><code>' + h(c.primary) + '</code>' + (c.primary_ip ? '<br>' + h(c.primary_ip) : '') + (c.primary_mac ? '<br>' + h(c.primary_mac) : '') + '</td>' +
+    '<td><code>' + h(c.path) + '</code></td>' +
+    '<td>' + mnStatusChip(c) + warn + '</td>' +
+    '<td><div class="mn-rows">' + rowsHtml + '</div>' +
+      '<button type="button" onclick="mnAddRow(\'' + h(c.name) + '\')">Add network</button>' +
+      '<div class="mn-fragment" id="mn-frag-' + h(c.name) + '">' + h(fragment) + '</div></td>' +
+    '<td class="mn-actions">' +
+      '<button type="button" onclick="mnSave(\'' + h(c.name) + '\')">Save</button> ' +
+      '<button type="button" onclick="mnApply(\'' + h(c.name) + '\')">Apply now</button>' +
+    '</td>' +
+    '</tr>';
 }
 
 function mnComputeFragment(c) {
@@ -233,7 +237,12 @@ function mnApplyAll() {
 function renderContainers(containers) {
   mnContainers = {};
   containers.forEach(function (c) { mnContainers[c.name] = c; });
-  $('#mn-containers').html(containers.map(mnRenderContainer).join(''));
+  var rows = containers.map(mnRenderContainer).join('');
+  $('#mn-containers').html(
+    '<table class="tablesorter"><thead><tr>' +
+    '<th>Container</th><th>Primary</th><th>Path</th><th>Status</th><th>Additional networks</th><th>Actions</th>' +
+    '</tr></thead><tbody>' + rows + '</tbody></table>'
+  );
 }
 
 function loadContainers() {

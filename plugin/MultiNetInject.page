@@ -11,11 +11,44 @@ Markdown="false"
 </style>
 <script>
 (function () {
-  // Only acts on the Docker container create/update forms. Everything
-  // here is defensive: any failure logs to the console and the section
-  // shows an error (or is simply absent) rather than ever blocking the
-  // real form submit — see docs/SPEC.md deliverable A.1.
-  if (!/^\/Docker\/(AddContainer|UpdateContainer)/.test(location.pathname)) return;
+  // Two, mutually exclusive things this page does, gated on path:
+  //  - Add/Update Container: inject the "Additional networks" section
+  //    into the form itself.
+  //  - Anywhere else under /Docker (the container list): inject a single
+  //    button that links to the plugin's own page (Settings/MultiNet).
+  //    The full networks/containers UI used to live on a Menu="Docker:3"
+  //    page, on the theory that it would render as its own tab — it
+  //    doesn't: DockerContainers.page (Menu="Docker:1") sets Tabs="false",
+  //    and MainContentTabless.php's rule for an untabbed menu group is to
+  //    concatenate every page in it in sequence onto one page, not render
+  //    separate tabs. That put the whole Networks UI inline underneath
+  //    the container list. Moved to its own Menu="Utilities" page instead
+  //    (matching unraid-secretsman's SecretsMan.page precedent — reachable
+  //    at Settings/MultiNet) and this button is the only thing that now
+  //    appears on /Docker itself.
+  var onForm = /^\/Docker\/(AddContainer|UpdateContainer)/.test(location.pathname);
+  var onDockerList = !onForm && /^\/Docker(\/|$)/.test(location.pathname);
+  if (!onForm && !onDockerList) return;
+
+  if (onDockerList) {
+    function insertDockerButton() {
+      var actions = document.querySelector('.js-actions');
+      if (!actions || document.getElementById('mn-open-multinet')) return;
+      var btn = document.createElement('input');
+      btn.type = 'button';
+      btn.id = 'mn-open-multinet';
+      btn.value = 'MultiNet';
+      btn.title = 'Manage additional Docker networks (unraid-multinet)';
+      btn.onclick = function () { location.href = '/Settings/MultiNet'; };
+      actions.appendChild(btn);
+    }
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', insertDockerButton);
+    } else {
+      insertDockerButton();
+    }
+    return;
+  }
 
   var API = '/plugins/unraid-multinet/include/api.php';
   var CORE = '/plugins/unraid-multinet/multinet-core.js';
@@ -35,18 +68,34 @@ Markdown="false"
     return r;
   }
 
-  function fetchNetworks(cb) {
+  // Unraid's global auto_prepend_file (webGui/include/local_prepend.php) CSRF-checks
+  // every plugin POST and accepts the token via EITHER $_POST['csrf_token'] or the
+  // X-CSRF-Token header — send both (belt and braces) rather than assume which one a
+  // future change to this handler prefers. HeadInlineJS.php declares a global
+  // `csrf_token` JS var on every page (this is how MultiNet.page's jQuery calls get it
+  // too, via $.ajaxPrefilter) — read it the same way here since this page runs as a
+  // plain script, not jQuery.
+  function mnPost(action, data, cb) {
+    var token = (typeof csrf_token !== 'undefined' && csrf_token) ? csrf_token : (window.csrf_token || '');
+    data = data || {};
+    data.action = action;
+    data.csrf_token = token;
+    var body = Object.keys(data).map(function (k) {
+      return encodeURIComponent(k) + '=' + encodeURIComponent(data[k] == null ? '' : data[k]);
+    }).join('&');
     var xhr = new XMLHttpRequest();
     xhr.open('POST', API, true);
     xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+    xhr.setRequestHeader('X-CSRF-Token', token);
     xhr.onload = function () {
-      try {
-        var resp = JSON.parse(xhr.responseText);
-        cb(resp.ok ? resp.networks : null);
-      } catch (e) { cb(null); }
+      try { cb(JSON.parse(xhr.responseText)); } catch (e) { cb(null); }
     };
     xhr.onerror = function () { cb(null); };
-    xhr.send('action=networks');
+    xhr.send(body);
+  }
+
+  function fetchNetworks(cb) {
+    mnPost('networks', {}, function (resp) { cb(resp && resp.ok ? resp.networks : null); });
   }
 
   function h(s) {
