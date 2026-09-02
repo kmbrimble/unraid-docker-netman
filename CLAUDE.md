@@ -213,6 +213,20 @@ Same as `unraid-secretsman`: self-hosted `.plg` installed by URL from
 assembles the tree and prints the exact next manual steps (bump `.plg`'s `&version;`/`&md5;`,
 commit, `gh release create`).
 
+**`raw.githubusercontent.com` caches for `max-age=300` (5 min) — a `curl -sI` 200 right after
+pushing does NOT mean the install will fetch the new content.** Hit this live during 0.3.2 →
+0.3.3: pushed the fix, `curl -sI` showed 200 within seconds, but `plugin install` on the host
+fetched a CDN edge that still had 0.3.2's body cached, silently reinstalling the wrong version
+(no error — the `.plg` it fetched genuinely declared version 0.3.2, so everything downstream,
+including the txz filename it requested, was internally consistent with that stale content).
+Caught by re-`curl`ing the raw URL's *body* (`grep -o 'version.*'`), not just its status code,
+immediately after install and noticing it disagreed with what was just pushed. **When cutting
+more than one release within a few minutes of each other, verify the raw URL's actual content
+(not just its HTTP status) matches the latest push before installing — or just wait out the
+5-minute window.** The versioned `.txz` filename itself isn't the risk (each version's filename
+is unique, so it can't silently reuse a stale package); the risk is entirely in the `.plg`
+document's own content being stale.
+
 ## Testing
 
 `php tests/run.php` (no framework; run over SSH against the host's PHP 8.4 — this dev
