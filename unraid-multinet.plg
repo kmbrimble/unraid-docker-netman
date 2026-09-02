@@ -1,0 +1,90 @@
+<?xml version="1.0" standalone="yes"?>
+
+<!--
+unraid-multinet — additional Docker networks per container, persisted in
+the container's own template.
+https://github.com/kmbrimble/unraid-multinet
+
+Not distributed via Community Applications. Install by URL from
+Plugins -> Install Plugin, using this file's raw.githubusercontent.com URL.
+See README.md and CLAUDE.md for design and the release process.
+-->
+
+<!DOCTYPE PLUGIN [
+<!ENTITY name      "unraid-multinet">
+<!ENTITY author    "kmbrimble">
+<!ENTITY version   "0.1.0">
+<!ENTITY launch    "Docker/MultiNet">
+<!ENTITY pluginURL "https://raw.githubusercontent.com/kmbrimble/unraid-multinet/main/unraid-multinet.plg">
+<!ENTITY gitURL    "https://github.com/kmbrimble/unraid-multinet/releases/download/v&version;">
+<!ENTITY plgPATH   "/boot/config/plugins/&name;">
+<!ENTITY emhttp    "/usr/local/emhttp/plugins/&name;">
+<!ENTITY md5       "REPLACE_WITH_BUILD_MD5">
+]>
+
+<PLUGIN name="&name;" author="&author;" version="&version;" launch="&launch;" pluginURL="&pluginURL;" support="https://github.com/kmbrimble/unraid-multinet" min="7.0" icon="sitemap">
+
+<CHANGES>
+###0.1.0
+- First release. Additional Docker networks per container, persisted in the container's own
+  template (ExtraParams for user-defined primaries, PostArgs for bridge/host/none/container:*
+  primaries — see README.md and CLAUDE.md for the full design). Docker → Networks tab
+  (network CRUD, container matrix with Save/Apply now), and an "Additional networks" section
+  injected into the Add/Update Container form below the Fixed MAC address row.
+</CHANGES>
+
+<FILE Name="&plgPATH;/&name;-&version;.txz">
+<URL>&gitURL;/&name;-&version;.txz</URL>
+<MD5>&md5;</MD5>
+</FILE>
+
+<FILE Name="&plgPATH;/&name;.md5">
+<INLINE>&md5;</INLINE>
+</FILE>
+
+<FILE Run="/bin/bash">
+<INLINE>
+set -e
+
+# md5-verify before touching anything, same pattern as unraid-secretsman's .plg.
+sum1=$(/usr/bin/md5sum &plgPATH;/&name;-&version;.txz | awk '{print $1}')
+sum2=$(/usr/bin/cat &plgPATH;/&name;.md5)
+if [[ "$sum1" != "$sum2" ]]; then
+  echo "unraid-multinet: package md5 mismatch, refusing to install"
+  rm -f &plgPATH;/&name;-&version;.txz
+  exit 1
+fi
+
+upgradepkg --install-new &plgPATH;/&name;-&version;.txz
+
+# Unpacks to &emhttp; (include/, *.page, multinet-core.js, README.md) —
+# .page files must sit in the plugin's installed ROOT (Unraid's page
+# loader globs plugins/*/*.page non-recursively).
+
+mkdir -p &plgPATH;
+if [[ ! -f &plgPATH;/state.json ]]; then
+  echo '{}' > &plgPATH;/state.json
+fi
+
+echo "unraid-multinet: install complete"
+</INLINE>
+</FILE>
+
+<FILE Run="/bin/bash" Method="remove">
+<INLINE>
+# Templates are untouched by uninstall, deliberately: any additional-network
+# fragment already written into a template's ExtraParams/PostArgs keeps
+# taking effect on its own (dockerMan's own xmlToCommand() applies it, no
+# plugin involvement needed) — see README.md "Limitations". Only the
+# installed plugin tree is removed; state.json (the sidecar that tells the
+# plugin's own blocks apart from hand-written ones) is deliberately KEPT so
+# a future reinstall recognises its own prior work instead of treating
+# every existing block as manually managed.
+removepkg &name;-&version;
+rm -rf &emhttp;
+
+echo "unraid-multinet: removed. Templates and &plgPATH;/state.json were left untouched."
+</INLINE>
+</FILE>
+
+</PLUGIN>
