@@ -58,22 +58,22 @@ See README.md and CLAUDE.md for design and the release process.
 <MD5>&md5;</MD5>
 </FILE>
 
-<FILE Name="&plgPATH;/&name;.md5">
-<INLINE>&md5;</INLINE>
-</FILE>
-
 <FILE Run="/bin/bash">
 <INLINE>
 set -e
 
-# md5-verify before touching anything, same pattern as unraid-secretsman's .plg.
-sum1=$(/usr/bin/md5sum &plgPATH;/&name;-&version;.txz | awk '{print $1}')
-sum2=$(/usr/bin/cat &plgPATH;/&name;.md5)
-if [[ "$sum1" != "$sum2" ]]; then
-  echo "unraid-multinet: package md5 mismatch, refusing to install"
-  rm -f &plgPATH;/&name;-&version;.txz
-  exit 1
-fi
+# No separate md5 re-check here (0.1.0 -> 0.2.0 had one, reading a
+# versionless sidecar file — dropped after a real upgrade failure: the
+# plugin manager's own file-fetch step (dynamix.plugin.manager/scripts/plugin,
+# "if file already exists ... do not overwrite") never rewrites a FILE with
+# no declared <MD5>/<SHA256> once a file already sits at that path, so the
+# sidecar stayed stuck at 0.1.0's value across the upgrade and the custom
+# check failed on a perfectly good 0.2.0 download. The <MD5> tag on the
+# .txz FILE block above IS verified by the plugin manager itself before
+# this script ever runs (same function, the branch that DOES re-fetch on a
+# mismatch) — trust that instead of re-deriving it here. Same lesson as
+# the CSRF check in include/api.php: don't duplicate a guarantee the
+# platform already enforces upstream of this code.
 
 upgradepkg --install-new &plgPATH;/&name;-&version;.txz
 
