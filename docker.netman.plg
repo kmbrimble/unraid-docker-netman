@@ -17,19 +17,29 @@ See README.md and CLAUDE.md for design and the release process.
 <!DOCTYPE PLUGIN [
 <!ENTITY name      "docker.netman">
 <!ENTITY author    "kmbrimble">
-<!ENTITY version   "0.3.0">
+<!ENTITY version   "0.3.1">
 <!ENTITY launch    "Settings/DockerNetMan">
 <!ENTITY pluginURL "https://raw.githubusercontent.com/kmbrimble/unraid-docker-netman/main/docker.netman.plg">
 <!ENTITY gitURL    "https://github.com/kmbrimble/unraid-docker-netman/releases/download/v&version;">
 <!ENTITY plgPATH   "/boot/config/plugins/&name;">
 <!ENTITY emhttp    "/usr/local/emhttp/plugins/&name;">
 <!ENTITY oldPlgPATH "/boot/config/plugins/unraid-multinet">
-<!ENTITY md5       "bc2b72a0d7993533f984e1bd3da9b4a4">
+<!ENTITY md5       "f51d3d2d342e8eb1045e8317fdf63926">
 ]>
 
 <PLUGIN name="&name;" author="&author;" version="&version;" launch="&launch;" pluginURL="&pluginURL;" support="https://github.com/kmbrimble/unraid-docker-netman" min="7.0" icon="sitemap">
 
 <CHANGES>
+###0.3.1
+- Fixed (for real this time): the "Add network" button still stretched to the full page width
+  on a wide viewport after 0.3.0's fix. Owner's live-browser DOM measurement at 1920px showed
+  the 0.3.0 rule (`width: auto`) was present and matched but had no effect — computed width
+  stayed ~1198px, ~100% of the `dd.dnm-block` parent — and that even `display:inline-block
+  !important` didn't help, while `width: fit-content !important` shrank it to 111px (comparable
+  to dockerMan's own EDIT button at 86px). Something in a stock stylesheet beats a
+  non-`!important` width rule here. Changed to `width: fit-content !important` with a
+  `min-width`, and applied the same rule pre-emptively to every button the Settings page
+  (`DockerNetMan.page`) renders, not just the one a real-browser pass had already caught.
 ###0.3.0
 - Renamed from "unraid-multinet" to **Docker NetMan** (plugin id `docker.netman`) — the old
   name was ambiguous with an existing CA plugin, "Docker Networks" by mstrhakr. New repo:

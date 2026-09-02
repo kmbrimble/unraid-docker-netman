@@ -7,10 +7,18 @@ Markdown="false"
 /* Stock dockerMan CSS applies input/select/button {width:100%} to anything inside
    a form row (dd) — without an override here that stretches the "Add network"
    button across the full page width on a wide viewport (narrow windows hid this
-   by making 100% look reasonable by coincidence). Constrain explicitly rather
-   than inherit the stock rule, same class of fix as secretsman's Browse-button
-   overflow (see its CHANGES). */
-.dnm-block button, .dnm-block input[type=button] { width: auto; }
+   by making 100% look reasonable by coincidence). `width: auto` alone does NOT
+   win here — measured live at 1920px: computed width stayed ~1198px (~100% of
+   the `dd.dnm-block` parent) even with `width:auto` present and matching, and
+   even with `display:inline-block !important` added on top. Only
+   `width: fit-content !important` actually shrank it (to 111px, comparable to
+   dockerMan's own EDIT button at 86px) — something in a stock stylesheet beats
+   a plain (non-!important) width rule here, so this needs the !important and
+   the fit-content value specifically, not auto. Same class of fix as
+   secretsman's Browse-button overflow (see its CHANGES), but auto wasn't
+   enough this time — confirmed by the owner's live DOM measurements, not
+   guessed. */
+.dnm-block button, .dnm-block input[type=button] { width: fit-content !important; min-width: 90px; }
 /* Rows stack DOWN the page (each field its own labelled line), not across —
    matches dockerMan's own dl/dt/dd form rhythm and keeps this usable on a
    phone-width viewport, where a flex row of four inputs had no room to breathe. */

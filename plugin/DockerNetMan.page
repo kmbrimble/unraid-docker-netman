@@ -19,6 +19,15 @@ $pluginRoot = '/plugins/docker.netman';
 .dnm-row-fields input[type=text] { width: 95%; }
 .dnm-fragment { font-family: monospace; font-size: 0.85em; word-break: break-all; color: #888; }
 .dnm-err { color: #c62828; }
+/* Same stock width:100% button issue as the injector (see DockerNetManInject.page's CSS
+   comment for the live measurements that ruled out plain width:auto) — applied here
+   pre-emptively to every button/input[type=button] this page renders, not just ones a
+   real-browser pass has actually caught stretched. */
+#dnm-networks button, #dnm-containers button, #dnm-apply-all,
+#dnm-networks input[type=button], #dnm-containers input[type=button] {
+  width: fit-content !important;
+  min-width: 90px;
+}
 </style>
 
 <table class="tablesorter shift">

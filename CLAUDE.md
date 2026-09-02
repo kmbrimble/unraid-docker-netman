@@ -102,9 +102,9 @@ reinstall/force-update/"Previous Apps" — no runtime hook, no plugin database).
   the live host), not by this session rendering the page itself. `window.dockerNetman.inject()`
   remains exposed for the owner to re-run and inspect in devtools. The DOM insertion point
   (`closest('dl')` / `closest('div')` fallback chain in `insertBlock()`) is unchanged since
-  0.1.0 and still a best-effort read of `CreateDocker.php`'s markdown-generated markup — it
-  hasn't itself been reported broken, but it's also never been confirmed correct from this
-  side.
+  0.1.0 — **confirmed correct live at 0.3.1**: the owner's real-browser review found the row
+  rendering in the right place with the right fields, so this is no longer an open question,
+  just still something only ever verified from the owner's side, not this one.
 
 ## CSRF
 
@@ -167,16 +167,30 @@ Real-browser testing (owner, 0.2.0) found a fourth bug beyond the rename's own s
   from `netman_state_get()`, which itself always returns `[]` rather than `null` when there's
   no record. The null-expected case is specific to the client, which is the only caller with no
   `state.json` to read at all. `tests/js.test.js` covers `expected=null` for both paths plus
-  this exact real-world string.
+  this exact real-world string. **Confirmed fixed live** (0.3.1 owner review, real browser at
+  192.168.0.10:81): the proxynet row now renders on the Update Container page with the correct
+  network selected (bridge excluded from options, as designed), Fixed IP `172.18.0.3`, and a
+  full, correct preview line — no error banner, no truncation.
 - **The "Add network" button stretched to the full page width** on a wide viewport — stock
   dockerMan CSS applies `input`/`select`/`button { width: 100% }` inside a form row, and a
   narrow test window had hidden this by making 100% look reasonable by coincidence. Same class
-  of bug as `unraid-secretsman`'s Browse-button overflow fix (see its CHANGES). Fixed with an
-  explicit `.dnm-block button { width: auto }` override in `DockerNetManInject.page`.
+  of bug as `unraid-secretsman`'s Browse-button overflow fix (see its CHANGES). Fixed **in
+  0.3.0** with `.dnm-block button { width: auto }` — **this did not actually work**, confirmed
+  by the owner's 0.3.1 live-browser DOM measurement at 1920px: the rule was present and
+  matched (only width rule the owner's own matching-rules scan could see) but computed width
+  stayed ~1198px, ~100% of the `dd.dnm-block` parent. Even `display: inline-block !important`
+  on top of it made no difference. Only `width: fit-content !important` actually worked (111px,
+  comparable to dockerMan's own EDIT button at 86px) — something in a stock stylesheet beats a
+  plain (non-`!important`) width rule at this specific insertion point, cross-origin/scan-
+  invisible to the owner's own rule enumeration. **`width: auto` is empirically insufficient
+  here — don't reintroduce it.** Fixed in 0.3.1 with `width: fit-content !important` plus a
+  `min-width`, applied both in `DockerNetManInject.page` and pre-emptively to every button
+  `DockerNetMan.page` (the Settings page) renders, not just the one already caught live.
 - **Per-row fields ran across the page** (network/IP/alias/MAC/Remove in one flex strip) instead
   of stacking down it — unusable on a phone-width viewport. Changed to one labelled block per
   field, matching dockerMan's own dl/dt/dd rhythm, stacked vertically within each row's own
-  bordered block.
+  bordered block. **Confirmed fixed live** (0.3.1 owner review): fields render as a stacked,
+  bordered, native-looking block.
 
 ## Known limitations (see README.md for the user-facing version)
 
