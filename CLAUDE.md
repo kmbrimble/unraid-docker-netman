@@ -15,9 +15,10 @@ plugin, "Docker Networks" by mstrhakr (`github.com/mstrhakr/docker.networks`) �
 README.md "Compared to Docker Networks (mstrhakr)" for how the two differ (in short: this
 plugin persists a fixed IP through `docker network connect` where mstrhakr's
 `dockerNetworksBuildTemplateConnectCmd` omits `--ip`, has an Extra Parameters path theirs
-doesn't, and injects into the Add/Update Container form theirs doesn't). The old repo is
-archived, with its README pointing here — the install URL there still resolves, just to a
-notice, not silently to nothing. Everything below uses the current (0.3.0) names throughout,
+doesn't, and injects into the Add/Update Container form theirs doesn't). The old repo was
+archived with its README pointing here, then later deleted by the owner — there's no live link
+to it anymore, and nothing here should imply one. Everything below uses the current (0.3.0)
+names throughout,
 including in descriptions of things that happened before the rename, since the old names no
 longer exist anywhere in this repo — the historical facts (what was tried, what broke, what
 fixed it) are unchanged by what the files were called at the time.

@@ -5,9 +5,9 @@ Docker NetMan — additional Docker networks per container, persisted in
 the container's own template.
 https://github.com/kmbrimble/unraid-docker-netman
 
-Formerly "unraid-multinet" (https://github.com/kmbrimble/unraid-multinet, archived) — renamed
-to avoid ambiguity with the existing Community Applications plugin "Docker Networks" by
-mstrhakr. See README.md "Compared to Docker Networks (mstrhakr)" for how the two differ.
+Formerly "unraid-multinet" (repo since deleted) — renamed to avoid ambiguity with the existing
+Community Applications plugin "Docker Networks" by mstrhakr. See README.md "Compared to Docker
+Networks (mstrhakr)" for how the two differ.
 
 Not distributed via Community Applications. Install by URL from
 Plugins -> Install Plugin, using this file's raw.githubusercontent.com URL.
@@ -17,19 +17,27 @@ See README.md and CLAUDE.md for design and the release process.
 <!DOCTYPE PLUGIN [
 <!ENTITY name      "docker.netman">
 <!ENTITY author    "kmbrimble">
-<!ENTITY version   "0.3.1">
+<!ENTITY version   "0.3.2">
 <!ENTITY launch    "Settings/DockerNetMan">
 <!ENTITY pluginURL "https://raw.githubusercontent.com/kmbrimble/unraid-docker-netman/main/docker.netman.plg">
 <!ENTITY gitURL    "https://github.com/kmbrimble/unraid-docker-netman/releases/download/v&version;">
 <!ENTITY plgPATH   "/boot/config/plugins/&name;">
 <!ENTITY emhttp    "/usr/local/emhttp/plugins/&name;">
 <!ENTITY oldPlgPATH "/boot/config/plugins/unraid-multinet">
-<!ENTITY md5       "f51d3d2d342e8eb1045e8317fdf63926">
+<!ENTITY md5       "26a27f8df2b90de47cd238ec3b45f838">
 ]>
 
 <PLUGIN name="&name;" author="&author;" version="&version;" launch="&launch;" pluginURL="&pluginURL;" support="https://github.com/kmbrimble/unraid-docker-netman" min="7.0" icon="sitemap">
 
 <CHANGES>
+###0.3.2
+- Docs only: added a short "How this was built" note near the top of README.md — this
+  implementation was substantially AI-generated (Claude Cowork, Claude Code); the problem,
+  design decisions, and acceptance testing were the owner's, verified against a real Unraid
+  host each release rather than just read back and assumed correct. Also dropped the dead link
+  to the old `unraid-multinet` repo (deleted by the owner) from README.md/CLAUDE.md — the
+  rename history stays, just without a link nothing resolves to anymore. Rebuilt so the copy
+  the Installed Plugins page renders (from this package's own README.md) matches.
 ###0.3.1
 - Fixed (for real this time): the "Add network" button still stretched to the full page width
   on a wide viewport after 0.3.0's fix. Owner's live-browser DOM measurement at 1920px showed
