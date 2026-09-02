@@ -43,6 +43,16 @@ than risk clobbering something you wrote.
   Fixed MAC address row, so you can set them up at the same time as everything else, before
   ever hitting Apply.
 
+## Verified live
+
+Tested end to end against a real container (`terrible-butler`, primary `bridge`) on the
+development host: **Save** wrote the `docker network connect` block into the template,
+dockerMan's own Force Update mechanism (`rebuild_container`) recreated the container using it
+with zero manual steps, and both the primary network and the additional network (at its fixed
+IP) came back automatically — confirmed via `docker inspect`, and via the reverse-proxied site
+staying reachable (HTTP 200) through the recreate and a subsequent stop/start cycle. See
+`CLAUDE.md` "Live verification" for the full trace.
+
 ## Limitations
 
 - `docker network connect` (the Post Arguments path) has no MAC option — MAC on an additional
