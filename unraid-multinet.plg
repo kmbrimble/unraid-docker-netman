@@ -19,7 +19,7 @@ See README.md and CLAUDE.md for design and the release process.
 <!ENTITY gitURL    "https://github.com/kmbrimble/unraid-multinet/releases/download/v&version;">
 <!ENTITY plgPATH   "/boot/config/plugins/&name;">
 <!ENTITY emhttp    "/usr/local/emhttp/plugins/&name;">
-<!ENTITY md5       "REPLACE_WITH_BUILD_MD5">
+<!ENTITY md5       "ab67727e8c5326edc5409e544cbb7242">
 ]>
 
 <PLUGIN name="&name;" author="&author;" version="&version;" launch="&launch;" pluginURL="&pluginURL;" support="https://github.com/kmbrimble/unraid-multinet" min="7.0" icon="sitemap">
