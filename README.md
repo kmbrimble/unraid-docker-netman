@@ -1,8 +1,5 @@
 # Docker NetMan
 
-*(formerly "unraid-multinet" — renamed to avoid ambiguity with an existing Community
-Applications plugin; see "Compared to Docker Networks (mstrhakr)" below.)*
-
 Unraid's dockerMan lets a container have exactly ONE network (Network Type + Fixed IP + MAC).
 This plugin lets each container have **additional** networks — each with its own optional
 fixed IP, alias, and (where the driver supports it) MAC — and makes them **persist across
@@ -108,11 +105,6 @@ staying reachable (HTTP 200) through the recreate and a subsequent stop/start cy
 
 Plugins → Install Plugin →
 `https://raw.githubusercontent.com/kmbrimble/unraid-docker-netman/main/docker.netman.plg`
-
-Upgrading from the old `unraid-multinet` name: uninstall it first (Plugins → Docker NetMan
-formerly unraid-multinet → Remove), then install from the URL above — the install script
-migrates `state.json` automatically if it finds the old one; your templates need no changes at
-all (the ExtraParams/PostArgs blocks they carry don't reference the plugin's name).
 
 ## Development
 

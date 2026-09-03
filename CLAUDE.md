@@ -6,22 +6,12 @@ actually confirmed).
 
 ## Name
 
-Shipped 0.1.0/0.2.0 as **unraid-multinet** (repo `kmbrimble/unraid-multinet`, plugin id
-`unraid-multinet`, page `MultiNet.page`/`MultiNetInject.page`, JS global `window.multinet`).
-Renamed to **Docker NetMan** at 0.3.0 (repo `kmbrimble/unraid-docker-netman`, plugin id
-`docker.netman`, `DockerNetMan.page`/`DockerNetManInject.page`, JS global
-`window.dockerNetman`) because "MultiNet" collides with an existing Community Applications
-plugin, "Docker Networks" by mstrhakr (`github.com/mstrhakr/docker.networks`) — see
-README.md "Compared to Docker Networks (mstrhakr)" for how the two differ (in short: this
-plugin persists a fixed IP through `docker network connect` where mstrhakr's
-`dockerNetworksBuildTemplateConnectCmd` omits `--ip`, has an Extra Parameters path theirs
-doesn't, and injects into the Add/Update Container form theirs doesn't). The old repo was
-archived with its README pointing here, then later deleted by the owner — there's no live link
-to it anymore, and nothing here should imply one. Everything below uses the current (0.3.0)
-names throughout,
-including in descriptions of things that happened before the rename, since the old names no
-longer exist anywhere in this repo — the historical facts (what was tried, what broke, what
-fixed it) are unchanged by what the files were called at the time.
+This project was briefly named **unraid-multinet** (`MultiNet.page`, `window.multinet`, etc.)
+before being renamed to **Docker NetMan** at 0.3.0 to avoid colliding with an existing CA
+plugin, "Docker Networks" by mstrhakr — noted here only so old commit messages and any stray
+`multinet_`/`MultiNet` reference someone stumbles on make sense; the old repo no longer exists,
+and everything below uses the current names throughout, including in descriptions of things
+that happened before the rename.
 
 ## What this is
 
@@ -291,10 +281,9 @@ Confirmed end to end on the real host, not simulated:
   survived the stop/start with the same container ID.
 - Template backup: `/boot/config/plugins/unraid-multinet/backup/my-terrible-butler.xml.bak`,
   confirmed byte-identical to the pre-edit original via `md5sum` before any write. Not needed
-  in the end (no rollback required) — left in place per the spec ("back up... then...").
-  Predates the 0.3.0 rename and was made under the plugin's old flash path; the rename's
-  state.json migration (see "Name" above) doesn't move it — it's just a leftover backup file,
-  not something anything reads, so it staying at the old path is harmless.
+  in the end (no rollback required) — left in place per the spec ("back up... then..."). Sits
+  at the plugin's old flash path from before the 0.3.0 rename — nothing reads it, so it staying
+  there is harmless, just a leftover.
 
 ## Host facts used here (see `/projects/unraid-ops/host-facts.md` for the full set)
 

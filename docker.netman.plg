@@ -5,9 +5,8 @@ Docker NetMan — additional Docker networks per container, persisted in
 the container's own template.
 https://github.com/kmbrimble/unraid-docker-netman
 
-Formerly "unraid-multinet" (repo since deleted) — renamed to avoid ambiguity with the existing
-Community Applications plugin "Docker Networks" by mstrhakr. See README.md "Compared to Docker
-Networks (mstrhakr)" for how the two differ.
+Not the same project as the existing Community Applications plugin "Docker Networks" by
+mstrhakr — see README.md "Compared to Docker Networks (mstrhakr)" for how the two differ.
 
 Not distributed via Community Applications. Install by URL from
 Plugins -> Install Plugin, using this file's raw.githubusercontent.com URL.
@@ -17,34 +16,35 @@ See README.md and CLAUDE.md for design and the release process.
 <!DOCTYPE PLUGIN [
 <!ENTITY name      "docker.netman">
 <!ENTITY author    "kmbrimble">
-<!ENTITY version   "0.3.3">
+<!ENTITY version   "0.3.4">
 <!ENTITY launch    "Settings/DockerNetMan">
 <!ENTITY pluginURL "https://raw.githubusercontent.com/kmbrimble/unraid-docker-netman/main/docker.netman.plg">
 <!ENTITY gitURL    "https://github.com/kmbrimble/unraid-docker-netman/releases/download/v&version;">
 <!ENTITY plgPATH   "/boot/config/plugins/&name;">
 <!ENTITY emhttp    "/usr/local/emhttp/plugins/&name;">
-<!ENTITY oldPlgPATH "/boot/config/plugins/unraid-multinet">
-<!ENTITY md5       "4d8cb9fa29ed8f90ad6e16f1fe337e74">
+<!ENTITY md5       "e3c0653f763a10ff68f2123080161110">
 ]>
 
 <PLUGIN name="&name;" author="&author;" version="&version;" launch="&launch;" pluginURL="&pluginURL;" support="https://github.com/kmbrimble/unraid-docker-netman" min="7.0" icon="sitemap">
 
 <CHANGES>
+###0.3.4
+- Dropped the unraid-multinet migration path (the old flash-path `state.json` copy on first
+  install): the old repo had zero forks/stars and existed for about an hour before being
+  deleted, and the old install directory is gone from the host too, so there is no install left
+  anywhere for that branch to ever run against — unreachable code. Fresh installs still create
+  an empty `state.json` normally. Also trimmed the rename/old-repo narrative out of README.md
+  and this CHANGES file — this is a standalone project now; the one-time context still lives in
+  `CLAUDE.md` for anyone wondering why old commits mention "multinet".
 ###0.3.3
-- Fixed two mistakes in 0.3.2, both caught by the owner reading the actual file rather than a
-  summary: the new "How this was built" section in README.md landed *before* the intro
-  paragraph describing what the plugin does, so a reader hit the AI-provenance note before
-  knowing what the project even is — moved it after the intro, before "How it works". And this
-  CHANGES file still said the old unraid-multinet repo "is archived" — it's deleted now, not
-  archived; reworded. Rebuilt so the installed README matches again.
+- Fixed: the "How this was built" README section landed before the intro paragraph describing
+  what the plugin does, so a reader hit the AI-provenance note before knowing what the project
+  is. Moved it after the intro, before "How it works" — text unchanged, just relocated.
 ###0.3.2
-- Docs only: added a short "How this was built" note near the top of README.md — this
-  implementation was substantially AI-generated (Claude Cowork, Claude Code); the problem,
-  design decisions, and acceptance testing were the owner's, verified against a real Unraid
-  host each release rather than just read back and assumed correct. Also dropped the dead link
-  to the old `unraid-multinet` repo (deleted by the owner) from README.md/CLAUDE.md — the
-  rename history stays, just without a link nothing resolves to anymore. Rebuilt so the copy
-  the Installed Plugins page renders (from this package's own README.md) matches.
+- Docs: added a short "How this was built" note to README.md — this implementation is
+  substantially AI-generated (Claude Cowork, Claude Code); the problem, design decisions, and
+  acceptance testing were the owner's, verified against a real Unraid host each release rather
+  than just read back and assumed correct.
 ###0.3.1
 - Fixed (for real this time): the "Add network" button still stretched to the full page width
   on a wide viewport after 0.3.0's fix. Owner's live-browser DOM measurement at 1920px showed
@@ -56,17 +56,6 @@ See README.md and CLAUDE.md for design and the release process.
   `min-width`, and applied the same rule pre-emptively to every button the Settings page
   (`DockerNetMan.page`) renders, not just the one a real-browser pass had already caught.
 ###0.3.0
-- Renamed from "unraid-multinet" to **Docker NetMan** (plugin id `docker.netman`) — the old
-  name was ambiguous with an existing CA plugin, "Docker Networks" by mstrhakr. New repo:
-  https://github.com/kmbrimble/unraid-docker-netman. The old repo (unraid-multinet) was archived
-  with its README pointing here, and has since been deleted by the owner. On install, if
-  `/boot/config/plugins/unraid-multinet/state.json`
-  exists and `&plgPATH;/state.json` does not, it's copied across automatically (the old file is
-  left alone, not deleted) — no other migration needed, since the ExtraParams/PostArgs blocks
-  themselves are name-agnostic (verified by re-parsing a real template under the renamed code
-  unchanged). All identifiers renamed consistently: files, entity names, the API path, the JS
-  global (`window.dockerNetman`), state.json's location, and both `.page` files
-  (DockerNetMan.page, DockerNetManInject.page).
 - Fixed: `rowsEqual()` (plugin/docker-netman-core.js) threw `TypeError: Cannot read properties
   of null (reading 'length')` when `expected` was `null` — exactly what the Add/Update Container
   injector passes, since it has no state.json available client-side. The throw aborted parsing
@@ -133,16 +122,6 @@ upgradepkg --install-new &plgPATH;/&name;-&version;.txz
 
 mkdir -p &plgPATH;
 
-# One-time migration from the pre-rename "unraid-multinet" install: state.json only
-# disambiguates "this plugin's own block" from something hand-written — copying it (not
-# moving it) means a container's existing additional-network row keeps showing as such
-# instead of looking manually-managed after the rename, with zero risk to the old install if
-# something goes wrong reading it. Templates need no migration at all: the ExtraParams/PostArgs
-# blocks they carry are plain docker/shell syntax with no plugin name embedded in them.
-if [[ -f &oldPlgPATH;/state.json &amp;&amp; ! -f &plgPATH;/state.json ]]; then
-  cp &oldPlgPATH;/state.json &plgPATH;/state.json
-  echo "docker.netman: migrated state.json from the old unraid-multinet install"
-fi
 if [[ ! -f &plgPATH;/state.json ]]; then
   echo '{}' > &plgPATH;/state.json
 fi
