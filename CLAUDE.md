@@ -13,7 +13,7 @@ plugin, "Docker Networks" by mstrhakr — noted here only so old commit messages
 and everything below uses the current names throughout, including in descriptions of things
 that happened before the rename.
 
-## What this is
+## What this project is
 
 Unraid's dockerMan gives a container exactly one network. This plugin adds more, persisted in
 the container's own template XML (dockerMan's own `xmlToCommand()` re-applies it on every
@@ -217,7 +217,7 @@ more than one release within a few minutes of each other, verify the raw URL's a
 is unique, so it can't silently reuse a stale package); the risk is entirely in the `.plg`
 document's own content being stale.
 
-## Testing
+## Test command
 
 `php tests/run.php` (no framework; run over SSH against the host's PHP 8.4 — this dev
 container has no local PHP) and `node tests/js.test.js`. CI (`.github/workflows/ci.yml`) runs
@@ -296,9 +296,123 @@ localhost-only) did not accept a plain TLS handshake over SSH+curl during this b
 a real browser" above) — live page-HTML verification (SPEC.md C.1/C.2) was not completed for
 that reason, beyond confirming the plugin installed and its files landed correctly.
 
-## Standing constraints (inherited from unraid-ops, apply here too)
+## Non-negotiable constraints
+
+Each of these looks like a bug, an omission or an easy tidy-up, and is none of those. The
+narrative reasoning is in the section named after each — read it before changing any of them.
+
+1. **No CSRF check in `plugin/include/api.php`.** webGui's `local_prepend.php` already enforces
+   it and *consumes* the token; a second check would 403 every legitimate request. ("CSRF")
+2. **Any caller of `include/api.php` that is not jQuery must send the token itself** — the
+   `dnmPost()` helper in `DockerNetManInject.page`, both as `X-CSRF-Token` and as a body field.
+   Unraid's `$.ajaxPrefilter` never touches a plain `XMLHttpRequest`. ("CSRF")
+3. **Plugin buttons use `width: fit-content !important`** in `DockerNetManInject.page` and
+   `DockerNetMan.page`. `width: auto` was measured live and does not work here. ("0.3.0
+   real-browser fixes")
+4. **No md5 sidecar or custom md5 re-check in `docker.netman.plg`.** The plugin manager verifies
+   the `.txz`'s own `<MD5>`; the sidecar could never be rewritten and broke upgrades.
+   ("Plugin manager quirk")
+5. **`netman_write_template_field()` edits raw template text, not a re-serialized
+   `SimpleXMLElement`** (`plugin/include/netman.php`) — so no other element in the user's
+   template can drift. ("Serialization design")
+6. **`rowsEqual(a, null)` returns `true` ("unknown — trust what was parsed"), and the injector
+   passes `null`, never `[]`** (`plugin/docker-netman-core.js`, `DockerNetManInject.page`). `[]`
+   means "expected nothing" and would mark every existing row manually-managed. ("0.3.0
+   real-browser fixes")
+
+Inherited from `unraid-ops`, and applying here too:
 
 Never reboot the host. Never stop the array or Docker. Never touch a container unrelated to the
 task at hand. No new host packages. Report before touching a stock OS file. Verify outcomes
 against real state (`docker inspect`, the actual template bytes, an actual HTTP response) —
 never trust a log line or exit code alone.
+
+## Deploy and verify
+
+Nothing ships on a green push. CI (`.github/workflows/ci.yml`) runs `php -l`, `php tests/run.php`
+and `node tests/js.test.js` on PHP 8.1 and 8.4 — that is the whole of it.
+
+Releasing is manual and only on the user's explicit say-so (a green suite is not a reason to
+ship):
+
+1. `scripts/build-plugin.sh` — builds `dist/docker.netman-<version>.txz`, prints the md5.
+   `dist/` is gitignored; artifacts are release assets, not repo contents.
+2. Bump `&version;` and `&md5;` in `docker.netman.plg` by hand; commit; push.
+3. `gh release create v<version> dist/docker.netman-<version>.txz dist/docker.netman.md5`.
+4. Install on the host: Plugins → Install Plugin with
+   `https://raw.githubusercontent.com/kmbrimble/unraid-docker-netman/main/docker.netman.plg`.
+5. If this release follows another within ~5 minutes, check the raw URL's **body** (not its
+   status code) matches what was just pushed before installing — see "Shipping model" above.
+
+Currently released and installed on this host: **v0.3.4** (`/boot/config/plugins/docker.netman/`).
+
+## Code review
+
+For `code-diff-reviewer` / `code-audit` / `code-security-audit`. Verified live 2026-09-04.
+
+**Exposure: LAN-only, behind the Unraid webGUI login.** Both `.page` files and
+`include/api.php` are served by the host's own nginx, which binds `192.168.0.10:81`,
+`192.168.66.10:81` and loopback only (`USE_SSL="no"` in `/boot/config/ident.cfg`, so :443 is
+loopback-only). There is no tunnel route, no reverse-proxy route and no port forward reaching
+it: `unraid.kiztigs.com` is NXDOMAIN at Cloudflare's own nameservers, and the single enabled
+Nginx Proxy Manager entry for that name forwards to `172.17.0.1:81`, where nothing listens.
+Unraid Connect remote access is unconfigured (`myservers.cfg` is 0 bytes) and the Tailscale
+plugin sits in `plugins-removed`. Every request passes nginx's global
+`auth_request /auth-request.php` — an unauthenticated GET to a plugin script returns
+`302 → /login`. **Not internet-facing; do not escalate on exposure alone.**
+
+**Modules that own data users rely on:**
+
+- `netman_write_template_field()` (`plugin/include/netman.php`) — the highest-risk function
+  here. It rewrites the user's live dockerMan template at
+  `/boot/config/plugins/dockerMan/templates-user/my-<name>.xml` (the flash file that *defines*
+  the container) by `preg_replace` on raw text plus a bare `file_put_contents` — **no temp file,
+  no rename, no backup**, unlike `netman_state_save()` a few lines earlier. A wrong pattern or a
+  torn write leaves a template dockerMan can no longer recreate the container from.
+- `case 'save'` (`plugin/include/api.php`) — the commit path: template first, `state.json`
+  second, not atomic across the two. A failure between them leaves the template changed and this
+  plugin's record of what it wrote stale — which is precisely the input `manually_managed` uses
+  to decide whether it may rewrite a block.
+- `case 'apply'` (`plugin/include/api.php`) → `netman_docker_network_connect/disconnect`
+  (`plugin/include/docker.php`) — the only path that mutates live Docker state.
+- `state.json` (`/boot/config/plugins/docker.netman/state.json`) — the sole record of what this
+  plugin wrote. Lose or corrupt it and every managed container reads as `manually_managed` and
+  the plugin refuses to touch it.
+
+**Infrastructure this repo depends on but does not contain.** A reviewer seeing "nothing in this
+repo implements X" for any of these is wrong:
+
+- **CSRF and authentication are enforced upstream** — `webGui/include/local_prepend.php`
+  (Unraid's global `auto_prepend_file`) and nginx's `auth_request`. Nothing here checks either,
+  deliberately: see "CSRF" above. "No CSRF check in `api.php`" is a known false positive.
+- **dockerMan** owns the template format, `xmlToCommand()` (which turns the `ExtraParams` /
+  `PostArgs` written here into a real `docker run`), and `rebuild_container`/`update_container`.
+- **`unraid-secretsman`**, a sibling plugin, live-patches that same `xmlToCommand()` in
+  `/usr/local/emhttp/plugins/dynamix.docker.manager/include/Helpers.php` on this host.
+- **The Unraid plugin manager** verifies the `.txz` against the `<MD5>` in the `.plg` — see
+  "Plugin manager quirk" for why re-checking it here was actively wrong.
+- **`window.csrf_token`** (declared by webGui's `HeadInlineJS.php`) and Unraid's global
+  `$.ajaxPrefilter`, which is why `DockerNetMan.page`'s jQuery calls need no token handling.
+- **The host's `docker` CLI and daemon** — every function in `plugin/include/docker.php` shells
+  out to them.
+
+**Test reality.** `tests/run.php` (42 checks) and `tests/js.test.js` (23) each `require`
+exactly one file: `plugin/include/netman.php` and `plugin/docker-netman-core.js`. Well covered
+there: parse and serialize round-trips on both the ExtraParams and PostArgs paths, idempotence,
+`manually_managed` drift detection, the `expected=null` regression, `netman_ip_in_subnet`,
+`netman_choose_path`, and `netman_write_template_field` against a temp XML file.
+
+Untested — **no test loads these files at all**:
+
+- `plugin/include/api.php`. All eight actions, `save` (the template write) and `apply` (live
+  `docker network connect`/`disconnect`) included.
+- `plugin/include/docker.php`. Every function shells out to `docker`.
+- `netman_state_load/save/get/set`, `netman_read_template`, `netman_list_templates` — they live
+  in the tested file but no test calls them.
+- `DockerNetMan.page` and `DockerNetManInject.page` (~590 lines of PHP/JS). No harness exists,
+  and every bug ever found in them was found by the owner in a real browser — see "0.3.0
+  real-browser fixes".
+
+**A change to `api.php`, `docker.php` or either `.page` has no test that can exercise it.** Treat
+that as the strongest defect signal available in this repo, and say plainly that only a live
+browser or host check can confirm such a change.
