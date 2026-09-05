@@ -16,7 +16,7 @@ See README.md and CLAUDE.md for design and the release process.
 <!DOCTYPE PLUGIN [
 <!ENTITY name      "docker.netman">
 <!ENTITY author    "kmbrimble">
-<!ENTITY version   "0.3.4">
+<!ENTITY version   "0.3.5">
 <!ENTITY launch    "Settings/DockerNetMan">
 <!ENTITY pluginURL "https://raw.githubusercontent.com/kmbrimble/unraid-docker-netman/main/docker.netman.plg">
 <!ENTITY gitURL    "https://github.com/kmbrimble/unraid-docker-netman/releases/download/v&version;">
@@ -28,6 +28,23 @@ See README.md and CLAUDE.md for design and the release process.
 <PLUGIN name="&name;" author="&author;" version="&version;" launch="&launch;" pluginURL="&pluginURL;" support="https://github.com/kmbrimble/unraid-docker-netman" min="7.0" icon="sitemap">
 
 <CHANGES>
+###0.3.5
+- Fixed: this plugin's row on the Plugins tab rendered several times the size of every stock
+  plugin beside it. That row's description is Markdown-rendered from the plugin's installed
+  README.md (dynamix.plugin.manager/include/ShowPlugins.php), and the file being packaged was
+  the repo's own README, whose "# Docker NetMan" heading became a real H1 in a table where
+  every stock plugin renders a bold paragraph — dragging roughly 8KB of repo documentation in
+  behind a read-more chevron with it. Now ships plugin/README.md instead: bold name, one
+  paragraph, no headings, the same shape as unassigned.devices-plus and unbalanced. Verified
+  by rendering old and new through the host's own Markdown() function rather than by eye.
+- Releasing is now automatic. .github/workflows/release.yml runs on every push to main that
+  names a version with no tag yet: it lints, runs both suites, builds the package, writes the
+  built package's real md5 back into the .plg, tags, and publishes the release with both
+  assets attached. The md5 is no longer typed by hand and so can no longer be typed wrong.
+  scripts/install-on-host.sh then installs on the Unraid host and verifies the result,
+  refusing to install until the raw .plg's own version and md5 both match the published
+  release — the 5-minute raw.githubusercontent.com cache that silently reinstalled 0.3.2 over
+  0.3.3 is now checked for, not waited out and hoped about.
 ###0.3.4
 - Dropped the unraid-multinet migration path (the old flash-path `state.json` copy on first
   install): the old repo had zero forks/stars and existed for about an hour before being

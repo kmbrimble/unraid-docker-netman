@@ -200,8 +200,8 @@ Same as `unraid-secretsman`: self-hosted `.plg` installed by URL from
 `raw.githubusercontent.com`, packaged `.txz` attached to a GitHub Release, `dist/` gitignored
 (built artifacts are release assets, not repo contents — confirmed by checking
 `unraid-secretsman`'s actual tracked files, not just its `.gitignore` wording). `scripts/build-plugin.sh`
-assembles the tree and prints the exact next manual steps (bump `.plg`'s `&version;`/`&md5;`,
-commit, `gh release create`).
+assembles the tree; since 0.3.5 it is CI that runs it, on every push to `main` that names an
+untagged `&version;` — see "Deploy and verify".
 
 **`raw.githubusercontent.com` caches for `max-age=300` (5 min) — a `curl -sI` 200 right after
 pushing does NOT mean the install will fetch the new content.** Hit this live during 0.3.2 →
@@ -336,22 +336,42 @@ never trust a log line or exit code alone.
 
 ## Deploy and verify
 
-Nothing ships on a green push. CI (`.github/workflows/ci.yml`) runs `php -l`, `php tests/run.php`
-and `node tests/js.test.js` on PHP 8.1 and 8.4 — that is the whole of it.
+**Releasing is automatic and needs nobody's say-so.** `.github/workflows/release.yml` watches
+`main`: when the `.plg`'s `&version;` entity names a version with no tag yet, it lints, runs both
+suites, runs `scripts/build-plugin.sh`, writes the built package's real md5 back into the `.plg`,
+commits that, tags `v<version>`, and publishes the GitHub Release with the `.txz` and `.md5`
+attached. Every other push is a no-op, the workflow's own md5 commit included — the tag check
+runs before anything else.
 
-Releasing is manual and only on the user's explicit say-so (a green suite is not a reason to
-ship):
+A release is therefore: **bump `&version;`, write the `###<version>` CHANGES entry, push.** Two
+things stay by hand, deliberately:
 
-1. `scripts/build-plugin.sh` — builds `dist/docker.netman-<version>.txz`, prints the md5.
-   `dist/` is gitignored; artifacts are release assets, not repo contents.
-2. Bump `&version;` and `&md5;` in `docker.netman.plg` by hand; commit; push.
-3. `gh release create v<version> dist/docker.netman-<version>.txz dist/docker.netman.md5`.
-4. Install on the host: Plugins → Install Plugin with
-   `https://raw.githubusercontent.com/kmbrimble/unraid-docker-netman/main/docker.netman.plg`.
-5. If this release follows another within ~5 minutes, check the raw URL's **body** (not its
-   status code) matches what was just pushed before installing — see "Shipping model" above.
+- **The CHANGES entry.** The workflow refuses to publish a version with no `###<version>` block
+  and uses that block verbatim as the release notes. A changelog is content, not mechanics;
+  generated from commit subjects it would be worthless.
+- **`&md5;` is not yours to compute.** Leave whatever is in the file. CI overwrites it with the
+  checksum of the package it just built, and asserts the two match before committing. Computing
+  it by hand was the step most likely to go wrong.
 
-Currently released and installed on this host: **v0.3.4** (`/boot/config/plugins/docker.netman/`).
+`dist/` is still gitignored — artifacts are release assets, not repo contents.
+`scripts/build-plugin.sh` still runs locally for a test build, but needs `xz`, which the
+claude-code container does not have and the runner does. That is one more reason the build lives
+in CI now.
+
+CI (`.github/workflows/ci.yml`) is unchanged and still runs `php -l`, `php tests/run.php` and
+`node tests/js.test.js` on PHP 8.1 and 8.4 on every push. The release workflow repeats those
+checks rather than trusting a sibling workflow's result it cannot see.
+
+**Installing on the host is the one step CI cannot do** — GitHub's runners have no route to
+192.168.0.10. `scripts/install-on-host.sh` does it from the claude-code container, and running it
+is part of releasing, not a separate decision: it confirms the release exists, waits until the
+raw `.plg`'s own `&version;` *and* `&md5;` match the published release (the 5-minute CDN cache
+described under "Shipping model", enforced rather than hoped for), runs `plugin install <raw URL>`
+over SSH, then verifies the flash `.plg` version, the `/var/log/plugins` registration, the
+installed tree, and that the packaged README is still the stock-shaped description. A failure
+there is a failed release, not a flaky script.
+
+Currently released and installed on this host: **v0.3.5** (`/boot/config/plugins/docker.netman/`).
 
 ## Code review
 
