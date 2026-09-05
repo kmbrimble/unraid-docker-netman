@@ -315,7 +315,14 @@ narrative reasoning is in the section named after each — read it before changi
 5. **`netman_write_template_field()` edits raw template text, not a re-serialized
    `SimpleXMLElement`** (`plugin/include/netman.php`) — so no other element in the user's
    template can drift. ("Serialization design")
-6. **`rowsEqual(a, null)` returns `true` ("unknown — trust what was parsed"), and the injector
+6. **`plugin/README.md`, not the repo's `README.md`, is what `scripts/build-plugin.sh` packages.**
+   `dynamix.plugin.manager/include/ShowPlugins.php` Markdown-renders `plugins/<name>/README.md`
+   into a one-line description cell on the Plugins tab. Shipping the repo README put its `# Docker
+   NetMan` H1 in there and rendered the row several times the size of every stock plugin beside
+   it (issue #1). Keep the packaged file to the stock shape — `**Name**`, blank line, one
+   paragraph, no headings and nothing long enough to trip the page's readmore collapse
+   (`maxHeight:80`). Repo docs go in the repo README; they are not the plugin's description.
+7. **`rowsEqual(a, null)` returns `true` ("unknown — trust what was parsed"), and the injector
    passes `null`, never `[]`** (`plugin/docker-netman-core.js`, `DockerNetManInject.page`). `[]`
    means "expected nothing" and would mark every existing row manually-managed. ("0.3.0
    real-browser fixes")

@@ -35,9 +35,14 @@ cp "$REPO_ROOT"/plugin/include/*.php "$PKG_DIR/include/"
 cp "$REPO_ROOT"/plugin/*.page "$PKG_DIR/"
 cp "$REPO_ROOT"/plugin/docker-netman-core.js "$PKG_DIR/"
 
-# The Installed Plugins page renders README.md from the plugin's installed
-# root (same convention as unraid-secretsman).
-cp "$REPO_ROOT"/README.md "$PKG_DIR/"
+# The Installed Plugins page renders README.md from the plugin's installed root
+# (dynamix.plugin.manager/include/ShowPlugins.php: Markdown(plugins/{name}/README.md),
+# falling back to a bare bold plugin name if absent). That is a one-line description
+# slot in a shared table, NOT documentation: ship plugin/README.md, which follows the
+# stock convention of a bold name plus one paragraph and no headings. Packaging the
+# repo's own README.md put its `# Docker NetMan` H1 straight into that table, rendering
+# the row several times the size of every stock plugin beside it — see issue #1.
+cp "$REPO_ROOT"/plugin/README.md "$PKG_DIR/"
 
 mkdir -p "$OUT_DIR"
 TXZ_PATH="$OUT_DIR/$NAME-$VERSION.txz"
