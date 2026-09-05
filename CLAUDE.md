@@ -217,6 +217,21 @@ more than one release within a few minutes of each other, verify the raw URL's a
 is unique, so it can't silently reuse a stale package); the risk is entirely in the `.plg`
 document's own content being stale.
 
+## Version numbers are compared with strcmp, not semantically
+
+`dynamix.plugin.manager/scripts/plugin` decides whether an install is an upgrade with
+`strcmp($version, $installed_version) < 0`, and prints `plugin: not installing older version`
+when it is. That is a plain string comparison, so **`0.3.10` is older than `0.3.9`** to Unraid,
+and any `0.x` version is older than a date-based `2026.08.25`. The sibling plugin
+`unraid-secretsman` lost two releases to exactly this after switching from date-based to
+semantic versioning — they published fine and simply refused to install, with an error that
+reads like a corrupt download.
+
+Enforced, not remembered: `.github/workflows/release.yml` refuses to publish a version that does
+not sort after the previous tag as a plain string, and `scripts/install-on-host.sh` checks the
+new version against the host's installed one before it tries, naming the `--forced` flag when
+crossing a boundary is genuinely what you want. Keep components single-digit, or zero-pad.
+
 ## Test command
 
 `php tests/run.php` (no framework; run over SSH against the host's PHP 8.4 — this dev
