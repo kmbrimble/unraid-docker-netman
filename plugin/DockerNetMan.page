@@ -7,39 +7,73 @@ Markdown="false"
 <?php
 $pluginRoot = '/plugins/docker.netman';
 ?>
+<link rel="stylesheet" href="<?autov('/webGui/styles/jquery.switchbutton.css')?>">
+<script src="<?autov('/webGui/javascript/jquery.switchbutton.js')?>"></script>
 <script src="<?=$pluginRoot?>/docker-netman-core.js"></script>
 <style>
-#dnm-networks table, #dnm-containers table { width: 100%; }
-#dnm-networks td, #dnm-containers td { vertical-align: top; }
-.dnm-chip { padding: 2px 8px; border-radius: 10px; font-size: 0.85em; color: #fff; }
+/* Layout follows Unassigned Devices: stock .title bars with .left/.right, stock orb dots. */
+#dnm .title .right { margin-left: 14px; }
+#dnm .title .right a { cursor: pointer; }
+#dnm-c-body, #dnm-n-body { overflow-x: auto; max-width: 100%; }
+#dnm table { width: 100%; }
+#dnm td { vertical-align: middle; }
+#dnm .orb { font-size: 0.9em; }
+.dnm-chip { padding: 2px 8px; border-radius: 10px; font-size: 0.85em; color: #fff; white-space: nowrap; }
 .dnm-chip-sync { background: #2e7d32; }
 .dnm-chip-drift { background: #c77700; }
-.dnm-chip-stopped { background: #757575; }
+.dnm-chip-stopped, .dnm-chip-prev, .dnm-chip-notpl { background: #757575; }
 .dnm-chip-manual { background: #b00020; }
-.dnm-row-fields input[type=text] { width: 95%; }
-.dnm-fragment { font-family: monospace; font-size: 0.85em; word-break: break-all; color: #888; }
+.dnm-net { display: inline-block; margin: 1px 6px 1px 0; padding: 0 6px; border: 1px solid #8884; border-radius: 8px; white-space: nowrap; font-size: 0.9em; }
+.dnm-prev { opacity: 0.6; }
+.dnm-cog, .dnm-cnt, .dnm-del { cursor: pointer; }
+.dnm-off { opacity: 0.3; cursor: default !important; }
+.dnm-edit > td, .dnm-members > td { padding: 8px 12px; background: #8881; }
+.dnm-row-fields { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px; }
+.dnm-row-fields input[type=text] { flex: 1 1 130px; min-width: 0; width: auto; }
+.dnm-fragment { font-family: monospace; font-size: 0.85em; word-break: break-all; color: #888; margin: 6px 0; }
 .dnm-err { color: #c62828; }
+#dnm-net-form { display: none; padding: 8px 12px; }
+#dnm-net-form .dnm-row-fields input, #dnm-net-form .dnm-row-fields select { flex: 1 1 130px; min-width: 0; width: auto; }
 /* Same stock width:100% button issue as the injector (see DockerNetManInject.page's CSS
-   comment for the live measurements that ruled out plain width:auto) — applied here
-   pre-emptively to every button/input[type=button] this page renders, not just ones a
-   real-browser pass has actually caught stretched. */
-#dnm-networks button, #dnm-containers button, #dnm-apply-all,
-#dnm-networks input[type=button], #dnm-containers input[type=button] {
+   comment for the live measurements that ruled out plain width:auto) — applied to every
+   button/input[type=button] on this page. */
+#dnm button, #dnm input[type=button] {
   width: fit-content !important;
   min-width: 90px;
 }
 </style>
 
-<table class="tablesorter shift">
-  <thead><tr><th>Networks</th></tr></thead>
-</table>
-<div id="dnm-networks"><p class="notice">Loading&hellip;</p></div>
+<div id="dnm">
 
-<table class="tablesorter shift">
-  <thead><tr><th>Containers</th></tr></thead>
-</table>
-<p><button id="dnm-apply-all" type="button">Apply all</button></p>
-<div id="dnm-containers"><p class="notice">Loading&hellip;</p></div>
+<div class="title">
+  <span class="left"><i class="fa fa-cubes"></i> Containers</span>
+  <span class="right"><a class="info" onclick="loadContainers()" title="Refresh"><i class="fa fa-refresh"></i></a></span>
+  <span class="right"><button type="button" id="dnm-apply-all" disabled>Apply all</button></span>
+  <span class="right"><input type="checkbox" id="dnm-only-extra"></span>
+  <span class="right"><input type="checkbox" id="dnm-show-prev"></span>
+</div>
+<div id="dnm-c-body"><p class="notice">Loading&hellip;</p></div>
+
+<div class="title">
+  <span class="left"><i class="fa fa-sitemap"></i> Networks</span>
+  <span class="right"><a class="info" onclick="dnmToggleNetForm()" title="Create network"><i class="fa fa-plus"></i></a></span>
+</div>
+<div id="dnm-net-form">
+  <div class="dnm-row-fields">
+    <input type="text" id="dnm-net-name" placeholder="name">
+    <select id="dnm-net-driver"><option value="bridge">bridge</option><option value="ipvlan">ipvlan</option><option value="macvlan">macvlan</option></select>
+    <input type="text" id="dnm-net-subnet" placeholder="subnet 172.30.0.0/24">
+    <input type="text" id="dnm-net-gateway" placeholder="gateway 172.30.0.1">
+    <input type="text" id="dnm-net-iprange" placeholder="ip range 172.30.0.128/25">
+    <input type="text" id="dnm-net-parent" placeholder="parent (ipvlan/macvlan) eth0">
+  </div>
+  <label><input type="checkbox" id="dnm-net-internal"> internal</label>
+  <button type="button" onclick="dnmCreateNetwork()">Create</button>
+  <span id="dnm-net-err" class="dnm-err"></span>
+</div>
+<div id="dnm-n-body"><p class="notice">Loading&hellip;</p></div>
+
+</div>
 
 <script>
 var API = '<?=$pluginRoot?>/include/api.php';
@@ -66,37 +100,49 @@ function h(s) {
   });
 }
 
-// ---- Networks table -----------------------------------------------------
+// Per-browser toggle state; storage can be blocked, so never let it throw.
+function dnmGet(key) { try { return localStorage.getItem('dnm.' + key) === '1'; } catch (e) { return false; } }
+function dnmSet(key, on) { try { localStorage.setItem('dnm.' + key, on ? '1' : '0'); } catch (e) {} }
+
+function dnmToggle(sel, key, label, onchange) {
+  var $c = $(sel).prop('checked', dnmGet(key));
+  if ($.fn.switchButton) {
+    $c.switchButton({labels_placement: 'left', on_label: label, off_label: label, checked: dnmGet(key)});
+  } else {
+    $c.before('<span>' + h(label) + ' </span>');
+  }
+  $c.on('change', function () { dnmSet(key, this.checked); onchange(); });
+}
+
+// ---- Networks -----------------------------------------------------------
+// The server returns networks already sorted case-insensitively.
+
+function dnmProtectedNet(name) { return /^(bridge|host|none)$/.test(name) || /^br\d/.test(name); }
 
 function renderNetworks(networks) {
   var rows = networks.map(function (n) {
-    var subnets = n.subnets.map(function (s) {
-      return h(s.subnet) + (s.gateway ? ' gw ' + h(s.gateway) : '') + (s.ip_range ? ' range ' + h(s.ip_range) : '');
-    }).join('<br>') || '&mdash;';
-    var containers = n.containers.map(function (c) { return h(c.name) + (c.ip ? ' (' + h(c.ip) + ')' : ''); }).join('<br>') || '&mdash;';
-    var protectedNet = /^(bridge|host|none)$/.test(n.name) || /^br\d/.test(n.name);
-    var del = protectedNet ? '' : '<button type="button" onclick="dnmDeleteNetwork(\'' + h(n.name) + '\')">Delete</button>';
-    return '<tr><td>' + h(n.name) + '</td><td>' + h(n.driver) + '</td><td>' + subnets + '</td><td>' + containers + '</td><td>' + del + '</td></tr>';
+    var subnets = n.subnets.map(function (s) { return h(s.subnet); }).join(', ') || '&mdash;';
+    var gws = n.subnets.map(function (s) { return h(s.gateway); }).filter(Boolean).join(', ') || '&mdash;';
+    var cnt = n.containers.length;
+    var cntCell = cnt ? '<a class="dnm-cnt" onclick="dnmToggleMembers(this)" title="Show containers">' + cnt + '</a>' : '0';
+    var del = dnmProtectedNet(n.name) ? '' : '<a class="dnm-del" title="Delete network" onclick="dnmDeleteNetwork(\'' + h(n.name) + '\')"><i class="fa fa-trash"></i></a>';
+    var members = n.containers.map(function (c) { return c.name; }).sort(function (a, b) { return a.localeCompare(b, undefined, {sensitivity: 'base'}); })
+      .map(function (name) {
+        var c = n.containers.filter(function (x) { return x.name === name; })[0];
+        return '<span class="dnm-net">' + h(name) + (c.ip ? ' · ' + h(c.ip) : '') + '</span>';
+      }).join('');
+    return '<tr><td>' + h(n.name) + '</td><td>' + h(n.driver) + '</td><td>' + subnets + '</td><td>' + gws + '</td><td>' + cntCell + '</td><td>' + del + '</td></tr>' +
+      '<tr class="dnm-members" style="display:none"><td colspan="6">' + members + '</td></tr>';
   }).join('');
-  $('#dnm-networks').html(
-    '<table class="tablesorter"><thead><tr><th>Name</th><th>Driver</th><th>Subnet</th><th>Containers</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>' +
-    '<h4>Create network</h4>' +
-    '<table class="new"><tr>' +
-    '<td>Name</td><td><input type="text" id="dnm-net-name" class="narrow"></td>' +
-    '<td>Driver</td><td><select id="dnm-net-driver"><option value="bridge">bridge</option><option value="ipvlan">ipvlan</option><option value="macvlan">macvlan</option></select></td>' +
-    '<td>Subnet</td><td><input type="text" id="dnm-net-subnet" class="narrow" placeholder="172.30.0.0/24"></td>' +
-    '<td>Gateway</td><td><input type="text" id="dnm-net-gateway" class="narrow" placeholder="172.30.0.1"></td>' +
-    '<td>IP range</td><td><input type="text" id="dnm-net-iprange" class="narrow" placeholder="172.30.0.128/25"></td>' +
-    '<td>Parent (ipvlan/macvlan)</td><td><input type="text" id="dnm-net-parent" class="narrow" placeholder="eth0"></td>' +
-    '<td><label><input type="checkbox" id="dnm-net-internal"> internal</label></td>' +
-    '<td><button type="button" onclick="dnmCreateNetwork()">Create</button></td>' +
-    '</tr></table><span id="dnm-net-err" class="dnm-err"></span>'
-  );
+  $('#dnm-n-body').html('<table><thead><tr><td>Name</td><td>Driver</td><td>Subnet</td><td>Gateway</td><td>Containers</td><td></td></tr></thead><tbody>' + rows + '</tbody></table>');
 }
+
+function dnmToggleMembers(el) { $(el).closest('tr').next('.dnm-members').toggle(); }
+function dnmToggleNetForm() { $('#dnm-net-form').toggle(); }
 
 function loadNetworks() {
   dnmPost('networks', {}, function (resp) {
-    if (!resp.ok) { $('#dnm-networks').html('<p class="dnm-err">' + h(resp.error) + '</p>'); return; }
+    if (!resp.ok) { $('#dnm-n-body').html('<p class="dnm-err">' + h(resp.error) + '</p>'); return; }
     renderNetworks(resp.networks);
   });
 }
@@ -113,6 +159,7 @@ function dnmCreateNetwork() {
   }, function (resp) {
     if (!resp.ok) { $('#dnm-net-err').text(resp.error); return; }
     $('#dnm-net-err').text('');
+    $('#dnm-net-form').hide().find('input[type=text]').val('');
     loadNetworks();
   });
 }
@@ -125,48 +172,79 @@ function dnmDeleteNetwork(name) {
   });
 }
 
-// ---- Containers matrix ----------------------------------------------------
+// ---- Containers -----------------------------------------------------------
 
 var dnmContainers = {}; // name -> container object (with in-progress edits)
+var dnmList = [];       // server order (case-insensitive alphabetical)
+var dnmOpen = null;     // name of the one open editor
+
+function dnmEditor(name) { return $('.dnm-edit').filter(function () { return $(this).attr('data-name') === name; }); }
 
 function dnmRowHtml(ctnName, row, idx, macDisabled) {
   row = row || {network: '', ip: '', alias: '', mac: ''};
-  return '<div class="dnm-row-fields" data-idx="' + idx + '" style="margin-bottom:4px">' +
-    '<input type="text" class="dnm-f-network" placeholder="network" value="' + h(row.network) + '" style="width:20%" onchange="dnmRowChanged(\'' + h(ctnName) + '\')">' +
-    '<input type="text" class="dnm-f-ip" placeholder="ip (optional)" value="' + h(row.ip) + '" style="width:20%" onchange="dnmRowChanged(\'' + h(ctnName) + '\')">' +
-    '<input type="text" class="dnm-f-alias" placeholder="alias (optional)" value="' + h(row.alias) + '" style="width:20%" onchange="dnmRowChanged(\'' + h(ctnName) + '\')">' +
-    '<input type="text" class="dnm-f-mac" placeholder="mac (optional)" value="' + h(row.mac) + '" style="width:20%"' + (macDisabled ? ' disabled title="MAC is not supported on the PostArgs path"' : '') + ' onchange="dnmRowChanged(\'' + h(ctnName) + '\')">' +
+  return '<div class="dnm-row-fields" data-idx="' + idx + '">' +
+    '<input type="text" class="dnm-f-network" placeholder="network" value="' + h(row.network) + '" onchange="dnmRowChanged(\'' + h(ctnName) + '\')">' +
+    '<input type="text" class="dnm-f-ip" placeholder="ip (optional)" value="' + h(row.ip) + '" onchange="dnmRowChanged(\'' + h(ctnName) + '\')">' +
+    '<input type="text" class="dnm-f-alias" placeholder="alias (optional)" value="' + h(row.alias) + '" onchange="dnmRowChanged(\'' + h(ctnName) + '\')">' +
+    '<input type="text" class="dnm-f-mac" placeholder="mac (optional)" value="' + h(row.mac) + '"' + (macDisabled ? ' disabled title="MAC is not supported on the PostArgs path"' : '') + ' onchange="dnmRowChanged(\'' + h(ctnName) + '\')">' +
     '<button type="button" onclick="dnmRemoveRow(\'' + h(ctnName) + '\', ' + idx + ')">Remove</button>' +
     '</div>';
 }
 
-function dnmStatusChip(c) {
-  if (!c.running) return '<span class="dnm-chip dnm-chip-stopped">not running</span>';
-  if (c.manually_managed) return '<span class="dnm-chip dnm-chip-manual">manually managed</span>';
-  var desiredNets = c.rows.map(function (r) { return r.network; });
-  var liveNets = Object.keys(c.live_networks).filter(function (n) { return n !== c.primary.split(':')[0]; });
-  var inSync = desiredNets.length === liveNets.length && desiredNets.every(function (n) { return liveNets.indexOf(n) !== -1; });
-  return inSync ? '<span class="dnm-chip dnm-chip-sync">in-sync</span>' : '<span class="dnm-chip dnm-chip-drift">drift</span>';
+function dnmPrimaryName(c) { return c.primary.split(':')[0]; }
+
+// One of: notemplate | previous | stopped | manual | sync | drift
+function dnmSyncState(c) {
+  if (c.no_template) return 'notemplate';
+  if (!c.installed) return 'previous';
+  if (!c.running) return 'stopped';
+  if (c.manually_managed) return 'manual';
+  var desired = c.rows.map(function (r) { return r.network; });
+  var live = Object.keys(c.live_networks).filter(function (n) { return n !== dnmPrimaryName(c); });
+  return desired.length === live.length && desired.every(function (n) { return live.indexOf(n) !== -1; }) ? 'sync' : 'drift';
 }
 
-function dnmRenderContainer(c) {
+var DNM_CHIPS = {
+  notemplate: ['notpl', 'no template'], previous: ['prev', 'previous app'], stopped: ['stopped', 'stopped'],
+  manual: ['manual', 'manually managed'], sync: ['sync', 'in-sync'], drift: ['drift', 'drift']
+};
+
+// Networks shown as chips: the template's rows, or (no template) whatever is live besides the primary.
+function dnmExtraNets(c) {
+  if (c.no_template) {
+    return Object.keys(c.live_networks).filter(function (n) { return n !== dnmPrimaryName(c); })
+      .map(function (n) { return {network: n, ip: c.live_networks[n].ip}; });
+  }
+  return c.rows;
+}
+
+function dnmEditorHtml(c) {
   var macDisabled = c.path === 'post';
   var rowsHtml = c.rows.map(function (r, i) { return dnmRowHtml(c.name, r, i, macDisabled); }).join('');
-  var fragment = dnmComputeFragment(c);
   var warn = c.manually_managed ? '<div class="dnm-err">' + (c.path === 'extra' ? 'ExtraParams' : 'PostArgs') + ' already contains a network block this plugin did not write &mdash; refusing to rewrite it. Remove it by hand first, or use the other path.</div>' : '';
-  return '<tr id="dnm-ctn-' + h(c.name) + '">' +
+  var n = h(c.name);
+  return warn + '<div class="dnm-rows">' + rowsHtml + '</div>' +
+    '<button type="button" onclick="dnmAddRow(\'' + n + '\')">Add network</button>' +
+    '<div>Path: <code>' + h(c.path) + '</code>' + (c.path === 'extra' ? ' (ExtraParams)' : ' (PostArgs)') + '</div>' +
+    '<div class="dnm-fragment">' + h(dnmComputeFragment(c)) + '</div>' +
+    '<button type="button" onclick="dnmSave(\'' + n + '\')">Save</button> ' +
+    '<button type="button" onclick="dnmApply(\'' + n + '\')"' + (c.installed ? '' : ' disabled title="Nothing to apply to: this container no longer exists"') + '>Apply now</button>';
+}
+
+function dnmRenderRow(c) {
+  var st = dnmSyncState(c), chip = DNM_CHIPS[st];
+  var extras = dnmExtraNets(c).map(function (r) { return '<span class="dnm-net">' + h(r.network) + (r.ip ? ' · ' + h(r.ip) : '') + '</span>'; }).join('') || '&mdash;';
+  var ip = (c.live_networks[dnmPrimaryName(c)] || {}).ip || c.primary_ip;
+  var dot = c.installed && c.running ? 'green-orb' : 'grey-orb';
+  var cog = c.no_template ? '<i class="fa fa-cog dnm-off" title="No dockerMan template: read-only"></i>'
+    : '<a class="dnm-cog" title="Edit" onclick="dnmToggleEdit(\'' + h(c.name) + '\')"><i class="fa fa-cog"></i></a>';
+  return '<tr class="dnm-ctn' + (c.installed ? '' : ' dnm-prev') + '" data-name="' + h(c.name) + '">' +
+    '<td><i class="fa fa-circle orb ' + dot + '"></i></td>' +
     '<td><b>' + h(c.name) + '</b></td>' +
-    '<td><code>' + h(c.primary) + '</code>' + (c.primary_ip ? '<br>' + h(c.primary_ip) : '') + (c.primary_mac ? '<br>' + h(c.primary_mac) : '') + '</td>' +
-    '<td><code>' + h(c.path) + '</code></td>' +
-    '<td>' + dnmStatusChip(c) + warn + '</td>' +
-    '<td><div class="dnm-rows">' + rowsHtml + '</div>' +
-      '<button type="button" onclick="dnmAddRow(\'' + h(c.name) + '\')">Add network</button>' +
-      '<div class="dnm-fragment" id="dnm-frag-' + h(c.name) + '">' + h(fragment) + '</div></td>' +
-    '<td class="dnm-actions">' +
-      '<button type="button" onclick="dnmSave(\'' + h(c.name) + '\')">Save</button> ' +
-      '<button type="button" onclick="dnmApply(\'' + h(c.name) + '\')">Apply now</button>' +
-    '</td>' +
-    '</tr>';
+    '<td><code>' + h(c.primary) + '</code>' + (ip ? ' · ' + h(ip) : '') + '</td>' +
+    '<td>' + extras + '</td>' +
+    '<td><span class="dnm-chip dnm-chip-' + chip[0] + '">' + chip[1] + '</span></td>' +
+    '<td>' + cog + '</td></tr>';
 }
 
 function dnmComputeFragment(c) {
@@ -180,7 +258,7 @@ function dnmComputeFragment(c) {
 
 function dnmReadRows(ctnName) {
   var rows = [];
-  $('#dnm-ctn-' + ctnName + ' .dnm-row-fields').each(function () {
+  dnmEditor(ctnName).find('.dnm-row-fields').each(function () {
     var net = $(this).find('.dnm-f-network').val().trim();
     if (!net) return;
     rows.push({
@@ -193,22 +271,37 @@ function dnmReadRows(ctnName) {
   return rows;
 }
 
+function dnmRefreshEditor(c) { dnmEditor(c.name).children('td').html(dnmEditorHtml(c)); }
+
 function dnmRowChanged(ctnName) {
   var c = dnmContainers[ctnName];
   c.rows = dnmReadRows(ctnName);
-  $('#dnm-frag-' + ctnName).text(dnmComputeFragment(c));
+  dnmEditor(ctnName).find('.dnm-fragment').text(dnmComputeFragment(c));
 }
 
 function dnmAddRow(ctnName) {
   var c = dnmContainers[ctnName];
+  c.rows = dnmReadRows(ctnName);
   c.rows.push({network: '', ip: '', alias: '', mac: ''});
-  $('#dnm-ctn-' + ctnName).replaceWith(dnmRenderContainer(c));
+  dnmRefreshEditor(c);
 }
 
 function dnmRemoveRow(ctnName, idx) {
   var c = dnmContainers[ctnName];
+  c.rows = dnmReadRows(ctnName);
   c.rows.splice(idx, 1);
-  $('#dnm-ctn-' + ctnName).replaceWith(dnmRenderContainer(c));
+  dnmRefreshEditor(c);
+}
+
+// Only one editor open at a time: opening another closes the previous.
+function dnmToggleEdit(name) {
+  $('.dnm-edit').remove();
+  var wasOpen = dnmOpen === name;
+  dnmOpen = wasOpen ? null : name;
+  if (wasOpen) return;
+  var $row = $('.dnm-ctn').filter(function () { return $(this).attr('data-name') === name; });
+  $('<tr class="dnm-edit"><td colspan="6"></td></tr>').attr('data-name', name).insertAfter($row);
+  dnmRefreshEditor(dnmContainers[name]);
 }
 
 function dnmSave(ctnName) {
@@ -233,37 +326,41 @@ function dnmApply(ctnName) {
   });
 }
 
+// Only rows currently in drift; anything else has nothing to reconcile.
 function dnmApplyAll() {
-  var names = Object.keys(dnmContainers);
+  var names = dnmList.filter(function (c) { return dnmSyncState(c) === 'drift'; }).map(function (c) { return c.name; });
   var next = function () {
     if (!names.length) { loadContainers(); return; }
-    var n = names.shift();
-    dnmPost('apply', {name: n}, function () { next(); });
+    dnmPost('apply', {name: names.shift()}, function () { next(); });
   };
   next();
 }
 
-function renderContainers(containers) {
-  dnmContainers = {};
-  containers.forEach(function (c) { dnmContainers[c.name] = c; });
-  var rows = containers.map(dnmRenderContainer).join('');
-  $('#dnm-containers').html(
-    '<table class="tablesorter"><thead><tr>' +
-    '<th>Container</th><th>Primary</th><th>Path</th><th>Status</th><th>Additional networks</th><th>Actions</th>' +
-    '</tr></thead><tbody>' + rows + '</tbody></table>'
-  );
+function renderContainers() {
+  var onlyExtra = dnmGet('onlyExtra');
+  var shown = dnmList.filter(function (c) { return !onlyExtra || dnmExtraNets(c).length > 0; });
+  $('#dnm-apply-all').prop('disabled', !dnmList.some(function (c) { return dnmSyncState(c) === 'drift'; }));
+  $('#dnm-c-body').html('<table><thead><tr><td></td><td>Container</td><td>Primary network</td><td>Additional networks</td><td>Sync</td><td></td></tr></thead><tbody>' +
+    (shown.map(dnmRenderRow).join('') || '<tr><td colspan="6">Nothing to show.</td></tr>') + '</tbody></table>');
+  var reopen = dnmOpen; dnmOpen = null;
+  if (reopen && dnmContainers[reopen] && shown.indexOf(dnmContainers[reopen]) !== -1) dnmToggleEdit(reopen);
 }
 
 function loadContainers() {
-  dnmPost('containers', {}, function (resp) {
-    if (!resp.ok) { $('#dnm-containers').html('<p class="dnm-err">' + h(resp.error) + '</p>'); return; }
-    renderContainers(resp.containers);
+  dnmPost('containers', {include_previous: dnmGet('showPrev') ? '1' : '0'}, function (resp) {
+    if (!resp.ok) { $('#dnm-c-body').html('<p class="dnm-err">' + h(resp.error) + '</p>'); return; }
+    dnmList = resp.containers;
+    dnmContainers = {};
+    dnmList.forEach(function (c) { dnmContainers[c.name] = c; });
+    renderContainers();
   });
 }
 
 $(function () {
+  dnmToggle('#dnm-show-prev', 'showPrev', 'Show previous apps', loadContainers);
+  dnmToggle('#dnm-only-extra', 'onlyExtra', 'Only with additional networks', renderContainers);
+  $('#dnm-apply-all').on('click', dnmApplyAll);
   loadNetworks();
   loadContainers();
-  $('#dnm-apply-all').on('click', dnmApplyAll);
 });
 </script>

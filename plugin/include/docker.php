@@ -147,3 +147,25 @@ function netman_docker_network_driver(string $name): ?string
     $res = netman_run('docker network inspect ' . escapeshellarg($name) . ' --format ' . escapeshellarg('{{.Driver}}'));
     return $res['ok'] ? trim($res['out']) : null;
 }
+
+/** Every container that exists (running or not): name => running bool. Empty if docker is unreachable. */
+function netman_docker_containers(): array
+{
+    $res = netman_run('docker ps -a --format ' . escapeshellarg("{{.Names}}\t{{.State}}"));
+    $out = [];
+    foreach ($res['ok'] ? explode("\n", trim($res['out'])) : [] as $line) {
+        [$name, $state] = array_pad(explode("\t", $line, 2), 2, '');
+        if ($name !== '') {
+            $out[$name] = $state === 'running';
+        }
+    }
+    return $out;
+}
+
+/** Container's HostConfig.NetworkMode ("default" is reported as "bridge"), or '' if unknown. */
+function netman_docker_container_primary(string $container): string
+{
+    $res = netman_run('docker inspect --type container ' . escapeshellarg($container) . ' --format ' . escapeshellarg('{{.HostConfig.NetworkMode}}'));
+    $m = $res['ok'] ? trim($res['out']) : '';
+    return $m === 'default' ? 'bridge' : $m;
+}

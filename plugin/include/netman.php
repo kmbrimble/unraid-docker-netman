@@ -438,6 +438,37 @@ function netman_list_templates(): array
     return $files;
 }
 
+/** Case-insensitive name order (Docker names mix case); byte order breaks ties so it is deterministic. */
+function netman_name_cmp(string $a, string $b): int
+{
+    return strcasecmp($a, $b) ?: strcmp($a, $b);
+}
+
+/**
+ * Join existing containers to their templates by exact <Name>.
+ * $containers: list of names that exist in Docker. $templates: <Name> => template path.
+ * Returns name-sorted [['name','path'|null,'installed'=>bool]]. Templates with no
+ * container ("Previous Apps") are only included when $includePrevious.
+ */
+function netman_join_containers(array $containers, array $templates, bool $includePrevious): array
+{
+    $out = [];
+    foreach ($containers as $name) {
+        $out[$name] = ['name' => $name, 'path' => $templates[$name] ?? null, 'installed' => true];
+    }
+    if ($includePrevious) {
+        foreach ($templates as $name => $path) {
+            $name = (string) $name;
+            if (!isset($out[$name])) {
+                $out[$name] = ['name' => $name, 'path' => $path, 'installed' => false];
+            }
+        }
+    }
+    $out = array_values($out);
+    usort($out, fn($a, $b) => netman_name_cmp($a['name'], $b['name']));
+    return $out;
+}
+
 /** Mirrors Helpers.php's xml_encode/xml_decode exactly (ENT_XML1 htmlspecialchars). */
 function netman_xml_encode(string $s): string
 {

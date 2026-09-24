@@ -156,6 +156,23 @@ checkEquals('path: container:x -> post', 'post', netman_choose_path('container:o
 checkEquals('path: br0 -> extra', 'extra', netman_choose_path('br0'));
 checkEquals('path: proxynet -> extra', 'extra', netman_choose_path('proxynet'));
 
+// ---- container/template join + case-insensitive sort -----------------------
+
+$tpls = ['Immich' => '/t/my-Immich.xml', 'immich-machine-learning' => '/t/a.xml', 'Immich-machine-learning' => '/t/b.xml', 'ollama' => '/t/o.xml'];
+$names = ['terrible-butler', 'AdGuardHome', 'claude-code', 'Immich', 'Immich-machine-learning', 'unraid-ops-x'];
+$j = netman_join_containers($names, $tpls, false);
+checkEquals('join: default order is case-insensitive', ['AdGuardHome', 'claude-code', 'Immich', 'Immich-machine-learning', 'terrible-butler', 'unraid-ops-x'], array_column($j, 'name'));
+$by = array_column($j, null, 'name');
+checkEquals('join: exists+template has path', '/t/my-Immich.xml', $by['Immich']['path']);
+checkEquals('join: exists, no template -> null path', null, $by['unraid-ops-x']['path']);
+check('join: all default entries installed', !in_array(false, array_column($j, 'installed'), true));
+check('join: previous apps hidden by default', !isset($by['ollama']) && !isset($by['immich-machine-learning']));
+$jp = netman_join_containers($names, $tpls, true);
+$byp = array_column($jp, null, 'name');
+check('join: template-no-container included when asked', isset($byp['ollama']) && $byp['ollama']['installed'] === false);
+check('join: exact-name match is case-sensitive (stale lowercase is previous)', $byp['immich-machine-learning']['installed'] === false && $byp['Immich-machine-learning']['installed'] === true);
+checkEquals('join: previous apps sorted in with the rest', ['AdGuardHome', 'claude-code', 'Immich', 'Immich-machine-learning', 'immich-machine-learning', 'ollama', 'terrible-butler', 'unraid-ops-x'], array_column($jp, 'name'));
+
 // ---- summary ---------------------------------------------------------
 
 echo "\n$count checks, $failures failures\n";

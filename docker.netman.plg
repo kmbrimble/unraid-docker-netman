@@ -16,7 +16,7 @@ See README.md and CLAUDE.md for design and the release process.
 <!DOCTYPE PLUGIN [
 <!ENTITY name      "docker.netman">
 <!ENTITY author    "kmbrimble">
-<!ENTITY version   "0.3.5">
+<!ENTITY version   "0.3.6">
 <!ENTITY launch    "Settings/DockerNetMan">
 <!ENTITY pluginURL "https://raw.githubusercontent.com/kmbrimble/unraid-docker-netman/main/docker.netman.plg">
 <!ENTITY gitURL    "https://github.com/kmbrimble/unraid-docker-netman/releases/download/v&version;">
@@ -28,6 +28,18 @@ See README.md and CLAUDE.md for design and the release process.
 <PLUGIN name="&name;" author="&author;" version="&version;" launch="&launch;" pluginURL="&pluginURL;" support="https://github.com/kmbrimble/unraid-docker-netman" min="7.0" icon="sitemap">
 
 <CHANGES>
+###0.3.6
+- Fixed: the Settings page listed every dockerMan template, including "Previous Apps" leftovers
+  for containers that no longer exist. It is now driven by containers that exist in Docker,
+  joined to their template by exact <Name>. Previous apps are hidden behind a "Show previous
+  apps" toggle (Apply now disabled for them); containers with no template are listed read-only.
+- Fixed: containers and networks are sorted alphabetically, case-insensitively.
+- Redesign: Settings/DockerNetMan follows the Unassigned Devices layout. Containers first, one
+  compact line each (status dot, primary network + IP, additional-network chips, sync chip, cog);
+  the cog opens the editor inline, one at a time. Networks are one line each with a clickable
+  member count and a header-bar create control. "Show previous apps" and "Only with additional
+  networks" toggles persist per browser. Apply all now only touches containers in drift.
+- Install: the install script prunes superseded docker.netman-*.txz packages from flash.
 ###0.3.5
 - Fixed: this plugin's row on the Plugins tab rendered several times the size of every stock
   plugin beside it. That row's description is Markdown-rendered from the plugin's installed
@@ -132,6 +144,9 @@ set -e
 # "Plugin manager quirk" for the incident. Don't reintroduce it.
 
 upgradepkg --install-new &plgPATH;/&name;-&version;.txz
+
+# Keep only the package just installed; superseded ones would otherwise pile up on flash.
+find &plgPATH; -maxdepth 1 -name '&name;-*.txz' ! -name '&name;-&version;.txz' -delete
 
 # Unpacks to &emhttp; (include/, *.page, docker-netman-core.js, README.md) — .page files must
 # sit in the plugin's installed ROOT (Unraid's page loader globs plugins/*/*.page

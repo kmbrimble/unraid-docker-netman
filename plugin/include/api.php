@@ -94,7 +94,9 @@ function netman_container_summary(string $templatePath, array $state): ?array
 
 switch ($action) {
     case 'networks': {
-        netman_respond(['ok' => true, 'networks' => netman_docker_networks()]);
+        $nets = netman_docker_networks();
+        usort($nets, fn($a, $b) => netman_name_cmp($a['name'], $b['name']));
+        netman_respond(['ok' => true, 'networks' => $nets]);
     }
 
     case 'network_create': {
@@ -129,13 +131,37 @@ switch ($action) {
     }
 
     case 'containers': {
+        // Driven by containers that exist in Docker, joined to templates by exact <Name>.
+        // Templates with no container ("Previous Apps") only appear with include_previous=1.
         $state = netman_state_load();
-        $out = [];
+        $live = netman_docker_containers();
+        $templates = [];
         foreach (netman_list_templates() as $path) {
-            $summary = netman_container_summary($path, $state);
-            if ($summary) {
-                $out[] = $summary;
+            $x = @simplexml_load_file($path);
+            if ($x !== false && (string) $x->Name !== '') {
+                $templates[(string) $x->Name] = $path;
             }
+        }
+        $out = [];
+        foreach (netman_join_containers(array_keys($live), $templates, ($_POST['include_previous'] ?? '') === '1') as $j) {
+            if ($j['path'] !== null) {
+                $summary = netman_container_summary($j['path'], $state);
+                if (!$summary) {
+                    continue;
+                }
+                $summary['no_template'] = false;
+            } else {
+                // Exists in Docker but was not created from a dockerMan template: read-only.
+                $nets = netman_docker_container_networks($j['name']);
+                $summary = [
+                    'name' => $j['name'], 'repository' => '', 'primary' => netman_docker_container_primary($j['name']),
+                    'primary_ip' => '', 'primary_mac' => '', 'primary_mac_supported' => false, 'path' => null,
+                    'rows' => [], 'manually_managed' => false, 'running' => $live[$j['name']],
+                    'live_networks' => $nets, 'template_path' => null, 'no_template' => true,
+                ];
+            }
+            $summary['installed'] = $j['installed'];
+            $out[] = $summary;
         }
         netman_respond(['ok' => true, 'containers' => $out]);
     }
