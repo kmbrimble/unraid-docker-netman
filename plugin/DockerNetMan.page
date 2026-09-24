@@ -78,6 +78,8 @@ $pluginRoot = '/plugins/docker.netman';
 </div>
 
 <script>
+(function () {
+'use strict';
 var API = '<?=$pluginRoot?>/include/api.php';
 
 function dnmBanner(msg, isError) {
@@ -91,7 +93,11 @@ function dnmBanner(msg, isError) {
 function dnmPost(action, data, done) {
   data = data || {};
   data.action = action;
-  $.post(API, data, function (resp) { done(resp); }, 'json').fail(function () {
+  $.post(API, data, function (resp) {
+    // A throw in a callback would otherwise vanish inside jQuery; surface it, with the action named.
+    try { done(resp); } catch (e) { console.error('Docker NetMan:', action, 'callback failed', e); dnmBanner('Docker NetMan: ' + action + ' finished but the page could not update (' + e.message + '). Reload it.', true); }
+  }, 'json').fail(function (xhr) {
+    console.error('Docker NetMan:', action, 'request failed', xhr && xhr.status, xhr && xhr.responseText);
     dnmBanner('Docker NetMan: request failed — check the browser console', true);
   });
 }
@@ -329,8 +335,9 @@ function dnmAdopt(name) {
     var go = function () {
       dnmPost('adopt', {name: name}, function (resp) {
         if (!resp.ok) { dnmBanner('Adopt failed: ' + resp.error, true); return; }
-        dnmOpen = name; dnmHintFor = name;
-        loadContainers();
+        // The adopt itself has succeeded; a failure past this point is display-only, so say so.
+        try { dnmOpen = name; dnmHintFor = name; loadContainers(); }
+        catch (e) { dnmBanner('Adopted, but the page could not refresh (' + e.message + '). Reload it.', true); }
       });
     };
     if (window.swal) {
@@ -400,4 +407,21 @@ $(function () {
   loadNetworks();
   loadContainers();
 });
+// Everything else stays private to this closure: Unraid's own header script owns globals
+// like `before`, `now`, `timers`, and a leak here breaks its uptime ticker.
+// Only what inline onclick/onchange attributes call is exposed.
+window.dnmToggleEdit = dnmToggleEdit;
+window.dnmAddRow = dnmAddRow;
+window.dnmRemoveRow = dnmRemoveRow;
+window.dnmRowChanged = dnmRowChanged;
+window.dnmSave = dnmSave;
+window.dnmApply = dnmApply;
+window.dnmAdopt = dnmAdopt;
+window.dnmUseIp = dnmUseIp;
+window.dnmCreateNetwork = dnmCreateNetwork;
+window.dnmDeleteNetwork = dnmDeleteNetwork;
+window.dnmToggleMembers = dnmToggleMembers;
+window.dnmToggleNetForm = dnmToggleNetForm;
+window.loadContainers = loadContainers;
+})();
 </script>

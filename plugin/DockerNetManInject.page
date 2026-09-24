@@ -31,6 +31,7 @@ Markdown="false"
 </style>
 <script>
 (function () {
+  'use strict';
   // Two, mutually exclusive things this page does, gated on path:
   //  - Add/Update Container: inject the "Additional networks" section
   //    into the form itself.

@@ -16,7 +16,7 @@ See README.md and CLAUDE.md for design and the release process.
 <!DOCTYPE PLUGIN [
 <!ENTITY name      "docker.netman">
 <!ENTITY author    "kmbrimble">
-<!ENTITY version   "0.3.8">
+<!ENTITY version   "0.3.9">
 <!ENTITY launch    "Settings/DockerNetMan">
 <!ENTITY pluginURL "https://raw.githubusercontent.com/kmbrimble/unraid-docker-netman/main/docker.netman.plg">
 <!ENTITY gitURL    "https://github.com/kmbrimble/unraid-docker-netman/releases/download/v&version;">
@@ -28,6 +28,15 @@ See README.md and CLAUDE.md for design and the release process.
 <PLUGIN name="&name;" author="&author;" version="&version;" launch="&launch;" pluginURL="&pluginURL;" support="https://github.com/kmbrimble/unraid-docker-netman" min="7.0" icon="sitemap">
 
 <CHANGES>
+###0.3.9
+- Fixed: the Settings page script leaked ~40 top-level names (h, API, dnm*, ...) into the global
+  scope of every Unraid page it ran on; it is now a strict-mode closure that exposes only the
+  names its inline handlers call. DockerNetManInject.page (runs on every Unraid page) is strict
+  too. A failure while refreshing after Adopt is now reported instead of vanishing silently.
+- Test: tests/globals.test.js runs each shipped script in a vm sandbox seeded with Unraid's own
+  header globals (before, after, now, timers, csrf_token, uptime), exercises the Adopt/Save/Apply
+  paths against a mocked jQuery/swal, and fails if any sentinel changes or an unexpected global
+  appears. Run by CI and the release workflow.
 ###0.3.8
 - New: "Adopt" for manually managed containers. In the container's editor, Adopt takes over a
   hand-written network block: if the plugin would write exactly the same text, only state.json

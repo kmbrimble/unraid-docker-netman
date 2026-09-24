@@ -32,4 +32,6 @@ jobs:
           node-version: '20'
 
       - name: JS tests
-        run: node tests/js.test.js
+        run: |
+          node tests/js.test.js
+          node tests/globals.test.js

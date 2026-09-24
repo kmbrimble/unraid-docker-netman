@@ -119,7 +119,9 @@ jobs:
         run: php tests/run.php
 
       - name: JS tests
-        run: node tests/js.test.js
+        run: |
+          node tests/js.test.js
+          node tests/globals.test.js
 
       - name: Build the package
         id: build
