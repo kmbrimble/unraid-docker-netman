@@ -413,7 +413,7 @@ over SSH, then verifies the flash `.plg` version, the `/var/log/plugins` registr
 installed tree, and that the packaged README is still the stock-shaped description. A failure
 there is a failed release, not a flaky script.
 
-Currently released and installed on this host: **v0.3.8** (`/boot/config/plugins/docker.netman/`).
+Currently released and installed on this host: **v0.3.9** (`/boot/config/plugins/docker.netman/`).
 
 ## Code review
 
