@@ -210,6 +210,37 @@ and a 32-hex md5. Run by `ci.yml`, `release.yml` and `scripts/build-plugin.sh` (
 build on failure). 0.3.6 was unparseable (a raw `<Name>` in CHANGES); escape angle brackets in
 CHANGES as `&lt;`/`&gt;`.
 
+## Browser verification (headless Chromium — this container CAN drive a real browser)
+
+Earlier sections say "no browser"; that is superseded. The reliable method, used for the 0.3.9
+acceptance run and wrapped in `scripts/browser-check.js` (repo only; `build-plugin.sh` packages
+`plugin/` alone, so it never reaches the txz):
+
+- `playwright-core` installed in a scratch dir in this container (`npm i playwright-core`; no host
+  packages), launched with `executablePath` = the cached
+  `~/.cache/ms-playwright/chromium_headless_shell-*/…/chrome-headless-shell`.
+- Auth by reusing the newest active root PHP session on the host (newest `/var/lib/php/sess_*`
+  containing `unraid_user|s:4:"root"`) as cookie `unraid_` + md5(`192.168.0.10`) — host WITHOUT the
+  port, per `local_prepend.php`'s `session_name`. Never print the session id.
+- `NODE_PATH=<scratch>/node_modules node scripts/browser-check.js /Main /Docker /Settings/DockerNetMan`
+  reports load time, pageerrors, console errors, `typeof window.before` and leaked globals.
+  0.3.9 result: all three pages ~3–4s, zero errors, `before` a Date, no leaks, Settings page
+  1952px tall at 1920x1012, no horizontal scroll.
+- Prefer this to the Cowork in-app preview pane, which is unreliable: it later stalled on every
+  page including /Main.
+
+**The 0.3.8 "`before.getTime is not a function`" report was that preview browser misbehaving, not
+the plugin** — in real headless Chromium `typeof window.before === "object"` after the uptime
+ticker ran, and none of `h`/`API`/`dnmPost`/`dnmRender` leaked. The strict-mode IIFE scoping in
+0.3.9 and `tests/globals.test.js` stay as hygiene regardless. My own reading of the code never
+found any assignment to `before` either.
+
+**Adopt acceptance (owner, real UI in headless Chromium, 0.3.9):** with only Grafana's key removed
+from `state.json` the row showed "manually managed"; Adopt → dialog said state.json only, template
+untouched; confirming turned the row "in-sync" WITHOUT a reload and reopened the editor with
+"currently 172.18.0.4 — set as fixed IP? use it". No page errors; `my-Grafana.xml` md5
+`d14666a146662e134715db6f4cefa9d3` unchanged throughout; end state identical to pre-test.
+
 ## Known limitations (see README.md for the user-facing version)
 
 - MAC on an additional network only works via ExtraParams, and only when that network's own
