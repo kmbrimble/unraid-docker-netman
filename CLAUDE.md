@@ -183,6 +183,33 @@ Real-browser testing (owner, 0.2.0) found a fourth bug beyond the rename's own s
   bordered block. **Confirmed fixed live** (0.3.1 owner review): fields render as a stacked,
   bordered, native-looking block.
 
+## Settings page (0.3.6 redesign) and Adopt (0.3.8)
+
+- `DockerNetMan.page` follows Unassigned Devices: stock `.title` bars with `.right` controls,
+  `orb` dots, `jquery.switchbutton`. Containers first (one line each, cog opens one inline editor
+  at a time), Networks second (member count expands). Driven by `docker ps -a` joined to templates
+  by exact `<Name>` (`netman_join_containers`); "Previous Apps" templates only with
+  `include_previous=1`; containers with no template are listed read-only. Order is
+  case-insensitive (`netman_name_cmp`), server-side — the client keeps the server's order.
+  Toggle state lives in localStorage.
+- **Verified in a real browser by the owner at 0.3.7** (1920x1012 and 375px): 1.93 screens tall
+  (was 8.5), 44 containers in case-insensitive order, previous-apps toggle both ways, inline
+  one-at-a-time editor, bridge member list collapsed to 28px, create form hidden by default, no
+  body horizontal scroll on mobile.
+- **Adopt** (`netman_adopt`, API `adopt`, `dry_run=1` reports the plan): records a hand-written
+  block in state.json. Exact canonical match → state only, template untouched; otherwise only
+  that path's field (PostArgs or ExtraParams, never the other) is normalised, after a confirm
+  showing before/after. Refuses when any network token is not accounted for by a parsed row.
+  Never pins live IPs: the editor only offers them as a one-click fill.
+- The docker.networks (mstrhakr) plugin was checked for and is **not installed** on this host.
+
+## .plg parse guard
+
+`scripts/check-plg.php` parses the `.plg` with entities expanded and requires version, pluginURL
+and a 32-hex md5. Run by `ci.yml`, `release.yml` and `scripts/build-plugin.sh` (which refuses to
+build on failure). 0.3.6 was unparseable (a raw `<Name>` in CHANGES); escape angle brackets in
+CHANGES as `&lt;`/`&gt;`.
+
 ## Known limitations (see README.md for the user-facing version)
 
 - MAC on an additional network only works via ExtraParams, and only when that network's own
@@ -386,7 +413,7 @@ over SSH, then verifies the flash `.plg` version, the `/var/log/plugins` registr
 installed tree, and that the packaged README is still the stock-shaped description. A failure
 there is a failed release, not a flaky script.
 
-Currently released and installed on this host: **v0.3.5** (`/boot/config/plugins/docker.netman/`).
+Currently released and installed on this host: **v0.3.8** (`/boot/config/plugins/docker.netman/`).
 
 ## Code review
 
