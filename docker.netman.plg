@@ -16,7 +16,7 @@ See README.md and CLAUDE.md for design and the release process.
 <!DOCTYPE PLUGIN [
 <!ENTITY name      "docker.netman">
 <!ENTITY author    "kmbrimble">
-<!ENTITY version   "0.3.6">
+<!ENTITY version   "0.3.7">
 <!ENTITY launch    "Settings/DockerNetMan">
 <!ENTITY pluginURL "https://raw.githubusercontent.com/kmbrimble/unraid-docker-netman/main/docker.netman.plg">
 <!ENTITY gitURL    "https://github.com/kmbrimble/unraid-docker-netman/releases/download/v&version;">
@@ -28,10 +28,13 @@ See README.md and CLAUDE.md for design and the release process.
 <PLUGIN name="&name;" author="&author;" version="&version;" launch="&launch;" pluginURL="&pluginURL;" support="https://github.com/kmbrimble/unraid-docker-netman" min="7.0" icon="sitemap">
 
 <CHANGES>
+###0.3.7
+- Fixed: 0.3.6's .plg did not parse (a raw angle-bracket tag in its changelog), so it could not be
+  installed. Contents are otherwise identical to 0.3.6.
 ###0.3.6
 - Fixed: the Settings page listed every dockerMan template, including "Previous Apps" leftovers
   for containers that no longer exist. It is now driven by containers that exist in Docker,
-  joined to their template by exact <Name>. Previous apps are hidden behind a "Show previous
+  joined to their template by exact &lt;Name&gt;. Previous apps are hidden behind a "Show previous
   apps" toggle (Apply now disabled for them); containers with no template are listed read-only.
 - Fixed: containers and networks are sorted alphabetically, case-insensitively.
 - Redesign: Settings/DockerNetMan follows the Unassigned Devices layout. Containers first, one
