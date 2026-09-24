@@ -32,6 +32,8 @@ $pluginRoot = '/plugins/docker.netman';
 .dnm-row-fields input[type=text] { flex: 1 1 130px; min-width: 0; width: auto; }
 .dnm-fragment { font-family: monospace; font-size: 0.85em; word-break: break-all; color: #888; margin: 6px 0; }
 .dnm-err { color: #c62828; }
+.dnm-hint { font-size: 0.85em; margin: 0 0 6px 4px; }
+.dnm-hint a { cursor: pointer; }
 #dnm-net-form { display: none; padding: 8px 12px; }
 #dnm-net-form .dnm-row-fields input, #dnm-net-form .dnm-row-fields select { flex: 1 1 130px; min-width: 0; width: auto; }
 /* Same stock width:100% button issue as the injector (see DockerNetManInject.page's CSS
@@ -176,19 +178,21 @@ function dnmDeleteNetwork(name) {
 
 var dnmContainers = {}; // name -> container object (with in-progress edits)
 var dnmList = [];       // server order (case-insensitive alphabetical)
+var dnmHintFor = null;  // container just adopted: offer live IPs as fixed IPs in its editor
 var dnmOpen = null;     // name of the one open editor
 
 function dnmEditor(name) { return $('.dnm-edit').filter(function () { return $(this).attr('data-name') === name; }); }
 
-function dnmRowHtml(ctnName, row, idx, macDisabled) {
+function dnmRowHtml(ctnName, row, idx, macDisabled, liveIp) {
   row = row || {network: '', ip: '', alias: '', mac: ''};
+  var hint = liveIp && !row.ip ? '<div class="dnm-hint">currently ' + h(liveIp) + ' — set as fixed IP? <a onclick="dnmUseIp(this, \'' + h(ctnName) + '\', \'' + h(liveIp) + '\')">use it</a></div>' : '';
   return '<div class="dnm-row-fields" data-idx="' + idx + '">' +
     '<input type="text" class="dnm-f-network" placeholder="network" value="' + h(row.network) + '" onchange="dnmRowChanged(\'' + h(ctnName) + '\')">' +
     '<input type="text" class="dnm-f-ip" placeholder="ip (optional)" value="' + h(row.ip) + '" onchange="dnmRowChanged(\'' + h(ctnName) + '\')">' +
     '<input type="text" class="dnm-f-alias" placeholder="alias (optional)" value="' + h(row.alias) + '" onchange="dnmRowChanged(\'' + h(ctnName) + '\')">' +
     '<input type="text" class="dnm-f-mac" placeholder="mac (optional)" value="' + h(row.mac) + '"' + (macDisabled ? ' disabled title="MAC is not supported on the PostArgs path"' : '') + ' onchange="dnmRowChanged(\'' + h(ctnName) + '\')">' +
     '<button type="button" onclick="dnmRemoveRow(\'' + h(ctnName) + '\', ' + idx + ')">Remove</button>' +
-    '</div>';
+    '</div>' + hint;
 }
 
 function dnmPrimaryName(c) { return c.primary.split(':')[0]; }
@@ -220,7 +224,8 @@ function dnmExtraNets(c) {
 
 function dnmEditorHtml(c) {
   var macDisabled = c.path === 'post';
-  var rowsHtml = c.rows.map(function (r, i) { return dnmRowHtml(c.name, r, i, macDisabled); }).join('');
+  var showHint = dnmHintFor === c.name && c.running;
+  var rowsHtml = c.rows.map(function (r, i) { return dnmRowHtml(c.name, r, i, macDisabled, showHint ? (c.live_networks[r.network] || {}).ip : null); }).join('');
   var warn = c.manually_managed ? '<div class="dnm-err">' + (c.path === 'extra' ? 'ExtraParams' : 'PostArgs') + ' already contains a network block this plugin did not write &mdash; refusing to rewrite it. Remove it by hand first, or use the other path.</div>' : '';
   var n = h(c.name);
   return warn + '<div class="dnm-rows">' + rowsHtml + '</div>' +
@@ -228,6 +233,7 @@ function dnmEditorHtml(c) {
     '<div>Path: <code>' + h(c.path) + '</code>' + (c.path === 'extra' ? ' (ExtraParams)' : ' (PostArgs)') + '</div>' +
     '<div class="dnm-fragment">' + h(dnmComputeFragment(c)) + '</div>' +
     '<button type="button" onclick="dnmSave(\'' + n + '\')">Save</button> ' +
+    (c.manually_managed ? '<button type="button" onclick="dnmAdopt(\'' + n + '\')">Adopt</button> ' : '') +
     '<button type="button" onclick="dnmApply(\'' + n + '\')"' + (c.installed ? '' : ' disabled title="Nothing to apply to: this container no longer exists"') + '>Apply now</button>';
 }
 
@@ -296,12 +302,43 @@ function dnmRemoveRow(ctnName, idx) {
 // Only one editor open at a time: opening another closes the previous.
 function dnmToggleEdit(name) {
   $('.dnm-edit').remove();
+  if (dnmHintFor !== name) dnmHintFor = null;
   var wasOpen = dnmOpen === name;
   dnmOpen = wasOpen ? null : name;
   if (wasOpen) return;
   var $row = $('.dnm-ctn').filter(function () { return $(this).attr('data-name') === name; });
   $('<tr class="dnm-edit"><td colspan="6"></td></tr>').attr('data-name', name).insertAfter($row);
   dnmRefreshEditor(dnmContainers[name]);
+}
+
+// One-click fill of the current live IP; the owner still has to press Save.
+function dnmUseIp(el, ctnName, ip) {
+  var $hint = $(el).closest('.dnm-hint');
+  $hint.prev('.dnm-row-fields').find('.dnm-f-ip').val(ip);
+  $hint.remove();
+  dnmRowChanged(ctnName);
+}
+
+// Adopt a hand-written block: dry-run first, confirm with the exact plan, then commit.
+function dnmAdopt(name) {
+  dnmPost('adopt', {name: name, dry_run: '1'}, function (plan) {
+    if (!plan.ok) { dnmBanner('Cannot adopt: ' + plan.error, true); return; }
+    var text = plan.mode === 'state_only'
+      ? '<p>The ' + h(plan.field) + ' block already matches what this plugin would write. Only the plugin\'s own record (state.json) changes; the template is <b>not</b> touched.</p><pre>' + h(plan.before) + '</pre>'
+      : '<p>The block would be rewritten differently, so the template will be <b>normalised</b> (' + h(plan.field) + ' only):</p><p>Before</p><pre>' + h(plan.before) + '</pre><p>After</p><pre>' + h(plan.after) + '</pre>';
+    var go = function () {
+      dnmPost('adopt', {name: name}, function (resp) {
+        if (!resp.ok) { dnmBanner('Adopt failed: ' + resp.error, true); return; }
+        dnmOpen = name; dnmHintFor = name;
+        loadContainers();
+      });
+    };
+    if (window.swal) {
+      swal({title: 'Adopt ' + name + '?', text: text, html: true, showCancelButton: true, confirmButtonText: 'Adopt'}, function (ok) { if (ok) go(); });
+    } else if (confirm('Adopt ' + name + '?\n\n' + plan.before + (plan.mode === 'state_only' ? '' : '\n->\n' + plan.after))) {
+      go();
+    }
+  });
 }
 
 function dnmSave(ctnName) {

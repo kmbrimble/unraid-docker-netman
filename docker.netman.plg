@@ -16,7 +16,7 @@ See README.md and CLAUDE.md for design and the release process.
 <!DOCTYPE PLUGIN [
 <!ENTITY name      "docker.netman">
 <!ENTITY author    "kmbrimble">
-<!ENTITY version   "0.3.7">
+<!ENTITY version   "0.3.8">
 <!ENTITY launch    "Settings/DockerNetMan">
 <!ENTITY pluginURL "https://raw.githubusercontent.com/kmbrimble/unraid-docker-netman/main/docker.netman.plg">
 <!ENTITY gitURL    "https://github.com/kmbrimble/unraid-docker-netman/releases/download/v&version;">
@@ -28,6 +28,16 @@ See README.md and CLAUDE.md for design and the release process.
 <PLUGIN name="&name;" author="&author;" version="&version;" launch="&launch;" pluginURL="&pluginURL;" support="https://github.com/kmbrimble/unraid-docker-netman" min="7.0" icon="sitemap">
 
 <CHANGES>
+###0.3.8
+- New: "Adopt" for manually managed containers. In the container's editor, Adopt takes over a
+  hand-written network block: if the plugin would write exactly the same text, only state.json
+  changes (the template is not touched); if it would differ, the confirm dialog shows the
+  before/after of that one field and the template is normalised. Blocks the parser cannot fully
+  account for are refused. After adopting, rows without a fixed IP offer the container's current
+  live IP as a one-click fill (nothing is pinned until you Save).
+- CI: the .plg is now parsed (entities expanded) and checked for version, pluginURL and md5 in CI,
+  in the release workflow and in scripts/build-plugin.sh, so an unparseable .plg like 0.3.6's
+  cannot be released.
 ###0.3.7
 - Fixed: 0.3.6's .plg did not parse (a raw angle-bracket tag in its changelog), so it could not be
   installed. Contents are otherwise identical to 0.3.6.

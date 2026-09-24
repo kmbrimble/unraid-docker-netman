@@ -34,10 +34,7 @@ $action = $_POST['action'] ?? '';
 /** Reserved names that can never be an additional-network target or be deleted. */
 function netman_is_protected_network(string $name): bool
 {
-    if (in_array($name, netman_reserved_networks(), true)) {
-        return true;
-    }
-    return (bool) preg_match('/^br\d/', $name);
+    return netman_is_protected_name($name);
 }
 
 /**
@@ -244,6 +241,23 @@ switch ($action) {
         netman_state_save($state);
 
         netman_respond(['ok' => true, 'path' => $path]);
+    }
+
+    case 'adopt': {
+        // Take over a hand-written block (see netman_adopt). dry_run=1 only reports the plan.
+        $name = trim((string) ($_POST['name'] ?? ''));
+        $tpl = netman_read_template($name);
+        if (!$tpl) {
+            netman_respond(['ok' => false, 'mode' => 'refuse', 'error' => 'no template for that container']);
+        }
+        $primaryRaw = (string) $tpl['xml']->Network;
+        $field = netman_choose_path($primaryRaw) === 'extra' ? 'ExtraParams' : 'PostArgs';
+        $res = netman_adopt($name, $primaryRaw, netman_xml_decode((string) $tpl['xml']->$field), $tpl['path'], netman_state_load(), ($_POST['dry_run'] ?? '') === '1');
+        if ($res['ok'] && ($_POST['dry_run'] ?? '') !== '1') {
+            netman_state_save($res['state']);
+        }
+        unset($res['state']);
+        netman_respond($res);
     }
 
     case 'apply': {

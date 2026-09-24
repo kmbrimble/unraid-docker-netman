@@ -173,6 +173,65 @@ check('join: template-no-container included when asked', isset($byp['ollama']) &
 check('join: exact-name match is case-sensitive (stale lowercase is previous)', $byp['immich-machine-learning']['installed'] === false && $byp['Immich-machine-learning']['installed'] === true);
 checkEquals('join: previous apps sorted in with the rest', ['AdGuardHome', 'claude-code', 'Immich', 'Immich-machine-learning', 'immich-machine-learning', 'ollama', 'terrible-butler', 'unraid-ops-x'], array_column($jp, 'name'));
 
+// ---- adopt ------------------------------------------------------------------
+
+function adoptTpl(string $extra, string $post): string
+{
+    $p = sys_get_temp_dir() . '/netman-adopt-' . getmypid() . '-' . mt_rand() . '.xml';
+    file_put_contents($p, "<?xml version=\"1.0\"?>\n<Container version=\"2\">\n  <Name>Grafana</Name>\n  <Network>bridge</Network>\n  <ExtraParams>" . netman_xml_encode($extra) . "</ExtraParams>\n  <PostArgs>" . netman_xml_encode($post) . "</PostArgs>\n</Container>\n");
+    return $p;
+}
+$userArg = '--user "$(id -u)"';
+
+// exact canonical block: state only, template bytes untouched
+$canon = '&& docker network connect proxynet Grafana';
+$tp = adoptTpl($userArg, $canon);
+$before = file_get_contents($tp);
+$r = netman_adopt('Grafana', 'bridge', $canon, $tp, [], false);
+checkEquals('adopt exact: mode', 'state_only', $r['mode']);
+check('adopt exact: template untouched', file_get_contents($tp) === $before);
+checkEquals('adopt exact: state rows', [['network' => 'proxynet', 'ip' => null, 'alias' => null, 'mac' => null]], $r['state']['Grafana']['rows']);
+$after = netman_parse_post($canon, 'Grafana', $r['state']['Grafana']['rows']);
+check('adopt exact: no longer manually managed afterwards', !$after['manually_managed']);
+$d = netman_adopt('Grafana', 'bridge', $canon, $tp, [], true);
+check('adopt dry-run: state not changed', $d['state'] === []);
+check('adopt already-managed refused', !netman_adopt('Grafana', 'bridge', $canon, $tp, $r['state'], true)['ok']);
+unlink($tp);
+
+// needs normalisation: ';' separator and extra whitespace; only PostArgs is rewritten, ExtraParams survives byte-for-byte
+$odd = '; docker  network connect   --alias web proxynet Grafana';
+$tp = adoptTpl($userArg, $odd);
+$before2 = file_get_contents($tp);
+$r = netman_adopt('Grafana', 'bridge', $odd, $tp, [], true);
+checkEquals('adopt normalise: mode', 'normalise', $r['mode']);
+checkEquals('adopt normalise: after text', '&& docker network connect --alias web proxynet Grafana', $r['after']);
+check('adopt normalise dry-run: template untouched', file_get_contents($tp) === $before2);
+$r = netman_adopt('Grafana', 'bridge', $odd, $tp, [], false);
+$x = simplexml_load_file($tp);
+checkEquals('adopt normalise: PostArgs rewritten', '&& docker network connect --alias web proxynet Grafana', (string) $x->PostArgs);
+checkEquals('adopt normalise: ExtraParams byte-for-byte', $userArg, (string) $x->ExtraParams);
+check('adopt normalise: ExtraParams raw text identical', strpos(file_get_contents($tp), '<ExtraParams>' . netman_xml_encode($userArg) . '</ExtraParams>') !== false);
+unlink($tp);
+
+// unparseable: unknown flag / other container -> refuse, template untouched
+foreach (['&& docker network connect --ip=1.2.3.4 proxynet Grafana', '&& docker network connect proxynet Other', '&& docker network connect --driver-opt x=y proxynet Grafana'] as $bad) {
+    $tp = adoptTpl($userArg, $bad);
+    $b = file_get_contents($tp);
+    $r = netman_adopt('Grafana', 'bridge', $bad, $tp, [], false);
+    check("adopt refuses: $bad", !$r['ok'] && $r['mode'] === 'refuse' && file_get_contents($tp) === $b);
+    unlink($tp);
+}
+// half-parseable: a good chunk followed by an unknown one must refuse too
+$half = '&& docker network connect proxynet Grafana && docker network connect --weird x Grafana';
+check('adopt refuses half-parseable chain', !netman_adopt('Grafana', 'bridge', $half, '/nonexistent', [], false)['ok']);
+// extra path: user network primary, hand-written --network run
+$ex = '--network br0 --network name=proxynet,ip=172.18.0.9 --dns=1.1.1.1';
+$r = netman_adopt('Grafana', 'br0', $ex, '/nonexistent', [], true);
+checkEquals('adopt extra: normalise (remaining moved before run)', 'normalise', $r['mode']);
+$ex2 = '--network br0 --network name=proxynet,ip=172.18.0.9';
+checkEquals('adopt extra exact: state_only', 'state_only', netman_adopt('Grafana', 'br0', $ex2, '/nonexistent', [], true)['mode']);
+check('adopt extra refuses unknown --network form', !netman_adopt('Grafana', 'br0', '--network br0 --network=proxynet', '/nonexistent', [], true)['ok']);
+
 // ---- summary ---------------------------------------------------------
 
 echo "\n$count checks, $failures failures\n";

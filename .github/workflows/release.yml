@@ -112,6 +112,9 @@ jobs:
       - name: Lint
         run: find plugin tests -name '*.php' -print0 | xargs -0 -n1 php -l
 
+      - name: Check .plg parses
+        run: php scripts/check-plg.php
+
       - name: PHP tests
         run: php tests/run.php
 

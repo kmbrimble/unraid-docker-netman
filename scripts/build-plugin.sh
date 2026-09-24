@@ -27,6 +27,9 @@ OUT_DIR="$REPO_ROOT/dist"
 
 trap 'rm -rf "$BUILD_DIR"' EXIT
 
+# Refuse to package anything if the .plg would not install, even when CI is bypassed.
+php "$REPO_ROOT/scripts/check-plg.php" "$REPO_ROOT/$NAME.plg" || { echo "build aborted: broken .plg"; exit 1; }
+
 echo "Building $NAME-$VERSION.txz ..."
 
 mkdir -p "$PKG_DIR/include"

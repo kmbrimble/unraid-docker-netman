@@ -537,3 +537,75 @@ function netman_write_template_field(string $path, string $element, string $newV
     }
     return file_put_contents($path, $new) !== false;
 }
+
+// ---- adopt --------------------------------------------------------------
+
+/**
+ * Adopt a hand-written network block: record its rows in state.json so the plugin
+ * treats it as its own. Never guesses — refuses unless the parser accounts for every
+ * network token in the field. If re-serialising the parsed rows reproduces the field
+ * (whitespace-normalised) the template is left alone (mode 'state_only'); otherwise the
+ * ONE relevant field (ExtraParams on the extra path, PostArgs on the post path) is
+ * rewritten to canonical form (mode 'normalise'). The other field is never touched.
+ * $dryRun reports the plan without writing. Returns ['ok','mode','field','before','after',
+ * 'rows','state'] or ['ok'=>false,'mode'=>'refuse','error'=>...]; the caller persists 'state'.
+ */
+function netman_adopt(string $name, string $primaryRaw, string $fieldText, string $tplPath, array $state, bool $dryRun): array
+{
+    $path = netman_choose_path($primaryRaw);
+    $field = $path === 'extra' ? 'ExtraParams' : 'PostArgs';
+    $primary = explode(':', $primaryRaw)[0];
+    $refuse = fn(string $why) => ['ok' => false, 'mode' => 'refuse', 'field' => $field, 'error' => $why];
+
+    $expected = netman_state_get($state, $name);
+    $p = $path === 'extra' ? netman_parse_extra($fieldText, $primary, $expected) : netman_parse_post($fieldText, $name, $expected);
+    if (!$p['found']) {
+        return $refuse("no network block found in $field");
+    }
+    if (!$p['manually_managed']) {
+        return $refuse("$field is already managed by this plugin");
+    }
+
+    // Every network token in the field must be accounted for by a parsed row.
+    $tokens = netman_tokenize($fieldText);
+    $seen = 0;
+    foreach ($tokens as $i => $t) {
+        if ($path === 'extra' ? netman_is_network_flag($t) : ($t === 'docker' && ($tokens[$i + 1] ?? '') === 'network' && ($tokens[$i + 2] ?? '') === 'connect')) {
+            $seen++;
+        }
+    }
+    $accounted = count($p['rows']) + ($path === 'extra' ? 1 : 0);
+    if ($seen !== $accounted) {
+        return $refuse("$field has a network flag or chunk the parser cannot fully account for (unknown flags, other container, or unusual syntax) — remove or fix it by hand");
+    }
+    foreach ($p['rows'] as $r) {
+        if ($r['network'] === '' || $r['network'] === $primary || netman_is_protected_name($r['network'])) {
+            return $refuse('block attaches a reserved or primary network: ' . $r['network']);
+        }
+    }
+
+    if ($path === 'extra') {
+        $mac = $p['primary_mac'];
+        $after = netman_serialize_extra($p['remaining'], netman_build_network_run($primary, $p['rows'], $mac, $mac !== null));
+    } else {
+        $after = netman_serialize_post($p['remaining'], netman_build_connect_chain($name, $p['rows']));
+    }
+    $norm = fn(string $s) => trim(preg_replace('/\s+/', ' ', $s));
+    $mode = $norm($after) === $norm($fieldText) ? 'state_only' : 'normalise';
+
+    $res = ['ok' => true, 'mode' => $mode, 'field' => $field, 'before' => $fieldText, 'after' => $after, 'rows' => $p['rows'], 'state' => $state];
+    if ($dryRun) {
+        return $res;
+    }
+    if ($mode === 'normalise' && !netman_write_template_field($tplPath, $field, $after)) {
+        return $refuse('failed to write template');
+    }
+    $res['state'] = netman_state_set($state, $name, $primaryRaw, $path, $p['rows']);
+    return $res;
+}
+
+/** bridge/host/none and br* can never be an additional-network target (mirrors api.php's netman_is_protected_network). */
+function netman_is_protected_name(string $name): bool
+{
+    return in_array($name, netman_reserved_networks(), true) || (bool) preg_match('/^br\d/', $name);
+}
