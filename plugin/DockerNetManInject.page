@@ -240,6 +240,22 @@ Markdown="false"
     }
   }
 
+  // Native Additional Networks control (Unraid 7.4+), when present. null on 7.3.x or if
+  // taking it over failed — in both cases the form is left exactly as dockerMan rendered it.
+  var nativeCtl = null;
+
+  function takeOverNativeControl() {
+    try {
+      var t = dockerNetman.takeOverNative(document);
+      if (!t) return;
+      // import only after the row is hidden, so a failure never shows a NetMan duplicate
+      state.rows = dockerNetman.mergeNativeRows(state.rows, t.names, currentPrimary());
+      nativeCtl = t;
+    } catch (e) {
+      console.warn('Docker NetMan: leaving the native Additional Networks control as-is', e);
+    }
+  }
+
   function composeBeforeSubmit() {
     var primary = currentPrimary();
     var name = (document.querySelector('input[name="contName"]') || {}).value || '';
@@ -255,6 +271,8 @@ Markdown="false"
       var chain = dockerNetman.buildConnectChain(name, state.rows);
       postEl.value = dockerNetman.serializePost(postEl.value, chain);
     }
+    // NetMan's block now carries every network; post none natively (empty <ExtraNetworks>).
+    if (nativeCtl) nativeCtl.clear();
   }
 
   function insertBlock() {
@@ -288,6 +306,7 @@ Markdown="false"
         }
         state.networks = networks;
         parseExistingIntoState();
+        takeOverNativeControl();
         renderBlock($block);
         var netSelect = document.querySelector('select[name="contNetwork"]');
         if (netSelect) netSelect.addEventListener('change', function () { renderBlock($block); });
