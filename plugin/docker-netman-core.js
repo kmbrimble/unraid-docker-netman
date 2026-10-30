@@ -215,7 +215,65 @@
     return remaining === '' ? '&& ' + chain : remaining + ' && ' + chain;
   }
 
+  // ---- native Additional Networks control (Unraid 7.4+) ---------------------
+  // 7.4 adds <select name="contExtraNetworks[]" multiple> to the Add/Update form
+  // (names only, no IP/alias/MAC). Feature-detected by that element's presence,
+  // never by version. NetMan's section replaces it: the row is hidden, any
+  // networks already selected there are imported as NetMan rows, and on submit
+  // the select is cleared so dockerMan stores an empty <ExtraNetworks> and does
+  // not `docker network connect` the same networks a second time.
+  var NATIVE_SELECT = 'select[name="contExtraNetworks[]"]';
+
+  /** Append native names to rows (no ip/alias/mac), skipping duplicates, the primary and reserved names. */
+  function mergeNativeRows(rows, names, primary) {
+    var out = rows.slice();
+    names.forEach(function (n) {
+      if (!n || n === primary || ['bridge', 'host', 'none'].indexOf(n) !== -1) return;
+      if (out.some(function (r) { return r.network === n; })) return;
+      out.push(rowDefaults({ network: n }));
+    });
+    return out;
+  }
+
+  /**
+   * Hide the native row and return {names, clear}; null when the control is absent
+   * (7.3.x — caller does nothing). Throws, with every element it hid restored, if
+   * the row cannot be located or hidden — caller then leaves the native control alone.
+   * The dt/dd + trailing blockquote shape is inferred from rc2's markup source
+   * (CreateDocker.php), not observed on a live 7.4 page.
+   */
+  function takeOverNative(doc) {
+    var sel = doc.querySelector(NATIVE_SELECT);
+    if (!sel) return null;
+    var names = Array.prototype.filter.call(sel.options, function (o) { return o.selected; })
+      .map(function (o) { return o.value; });
+    var dd = sel.closest('dd');
+    if (!dd) throw new Error('native Additional Networks <dd> not found');
+    var hidden = [];
+    function hide(el) { hidden.push([el, el.style.display]); el.style.display = 'none'; }
+    try {
+      var dt = dd.previousElementSibling;
+      if (dt && dt.tagName === 'DT') hide(dt);
+      hide(dd); // also holds the dropdownchecklist widget, which is inserted beside the select
+      // the help text is a blockquote right after the row: after the dd, or after its dl
+      var help = dd.nextElementSibling || (dd.parentElement && dd.parentElement.nextElementSibling);
+      if (help && help.tagName === 'BLOCKQUOTE') hide(help);
+    } catch (e) {
+      hidden.forEach(function (h) { h[0].style.display = h[1]; });
+      throw e;
+    }
+    return {
+      names: names,
+      clear: function () {
+        Array.prototype.forEach.call(sel.options, function (o) { o.selected = false; });
+      },
+    };
+  }
+
   return {
+    NATIVE_SELECT: NATIVE_SELECT,
+    mergeNativeRows: mergeNativeRows,
+    takeOverNative: takeOverNative,
     tokenize: tokenize,
     choosePath: choosePath,
     parseExtra: parseExtra,

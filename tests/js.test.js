@@ -72,4 +72,48 @@ check('post: real-world string does not throw and yields one row', realWorldPars
 check('post: real-world row is proxynet@172.18.0.3', realWorldParsed.rows[0].network === 'proxynet' && realWorldParsed.rows[0].ip === '172.18.0.3');
 check('post: real-world -> not manually managed', !realWorldParsed.manually_managed);
 
+
+// ---- native Additional Networks control (Unraid 7.4) ----
+{
+  const merged = dockerNetman.mergeNativeRows([{ network: 'proxynet', ip: '172.18.0.3', alias: null, mac: null }],
+    ['proxynet', 'other', 'br0', 'bridge', ''], 'br0');
+  check('native merge: dedupes against block, skips primary/reserved/empty',
+    merged.length === 2 && merged[0].ip === '172.18.0.3' && merged[1].network === 'other' && merged[1].ip === null);
+
+  // Minimal DOM stand-in, shaped like rc2's rendered row:
+  //   <dl><dt>Additional Networks:</dt><dd><select multiple>…</select></dd></dl><blockquote>help</blockquote>
+  const el = (tagName, extra) => Object.assign({ tagName, style: { display: '' }, previousElementSibling: null, nextElementSibling: null, parentElement: null }, extra);
+  function fixture(selected) {
+    const sel = el('SELECT', { options: ['proxynet', 'other'].map(v => ({ value: v, selected: selected.includes(v) })) });
+    const dt = el('DT'), dd = el('DD'), dl = el('DL'), help = el('BLOCKQUOTE');
+    sel.closest = (t) => (t === 'dd' ? dd : null);
+    dt.nextElementSibling = dd; dd.previousElementSibling = dt; dd.parentElement = dl;
+    dl.nextElementSibling = help;
+    return { doc: { querySelector: (q) => (q === dockerNetman.NATIVE_SELECT ? sel : null) }, sel, dt, dd, help };
+  }
+  const f = fixture(['proxynet']);
+  const t = dockerNetman.takeOverNative(f.doc);
+  check('native: names read from selected options', t.names.length === 1 && t.names[0] === 'proxynet');
+  check('native: dt, dd and help blockquote hidden', [f.dt, f.dd, f.help].every(e => e.style.display === 'none'));
+  t.clear();
+  check('native: clear() deselects everything', f.sel.options.every(o => !o.selected));
+
+  // 7.3.x: control absent -> null, nothing touched
+  check('native absent (7.3.x): takeOverNative returns null', dockerNetman.takeOverNative({ querySelector: () => null }) === null);
+
+  // fail soft: hiding the second element throws -> first is restored, error propagates, selection untouched
+  const g = fixture(['proxynet']);
+  Object.defineProperty(g.dd.style, 'display', { get() { return ''; }, set() { throw new Error('boom'); } });
+  let threw = false;
+  try { dockerNetman.takeOverNative(g.doc); } catch (e) { threw = true; }
+  check('native fail-soft: throws', threw);
+  check('native fail-soft: dt restored, selection intact', g.dt.style.display === '' && g.sel.options[0].selected);
+
+  // row not found -> throws before touching anything
+  const h2 = fixture([]);
+  h2.sel.closest = () => null;
+  let threw2 = false;
+  try { dockerNetman.takeOverNative(h2.doc); } catch (e) { threw2 = true; }
+  check('native fail-soft: missing dd throws, nothing hidden', threw2 && h2.dt.style.display === '');
+}
 console.log(`${count} checks passed`);
