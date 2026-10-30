@@ -137,6 +137,51 @@ a real browser". Here:
 The 0.3.9 results, the 0.3.8 `before.getTime` false alarm and the Adopt acceptance run are in
 `docs/history.md`.
 
+## Unraid 7.4 native "Additional Networks" (branch `feature/native-extranetworks`, unreleased)
+
+Unraid 7.4.0-rc.2 adds a native control to the Add/Update Container form. Source-diffed (7.3.4 vs tag
+7.4.0-rc.2), not observed on a live 7.4 host:
+
+- **What it is:** `<select id="contExtraNetworks" name="contExtraNetworks[]" multiple>` (jQuery
+  dropdownchecklist) between Network Type and Fixed IP, plus a help blockquote. Stores **names only**,
+  comma-separated, in a new template element `<ExtraNetworks>`. After `docker create/run`,
+  `connectExtraNetworks()` runs plain `docker network connect <net> <name>` (CreateDocker add/update
+  + rebuild, and `scripts/update_container`). No fixed IP, alias or MAC — so it cannot replace NetMan.
+- **Unchanged between 7.3.4 and rc.2** (so the injector's anchors still hold): `contNetwork`,
+  `contMyIP`, `contMyMAC`, `contExtraParams`, `contPostArgs`, `contName`, `showSubnet`,
+  `hasNetworkParam`, and the `xmlToCommand` ExtraParams/PostArgs ordering (only `--memory` was added).
+- **Decision (Kieren): NetMan's section is the only visible control on 7.4 and stays the single
+  storage path.** Behaviour is keyed off feature detection (`select[name="contExtraNetworks[]"]`
+  exists; rule: `unraid-webgui-plugin-pages`, "Page registration"); with the control absent (7.3.x)
+  nothing changes:
+  - Injector (`takeOverNative` in `docker-netman-core.js`): hides the native `dt`/`dd` (which holds the
+    dropdownchecklist widget) and the following `blockquote`; imports already-selected names as
+    NetMan rows with no IP/alias/MAC, de-duplicated against the parsed block; on submit **deselects
+    every option** so nothing posts in `contExtraNetworks[]` and `<ExtraNetworks>` is saved empty.
+    Fails soft (same skill rule): hiding is undone and import skipped if anything throws, and an
+    unreachable endpoint leaves the native control visible and untouched.
+  - Server: `<ExtraNetworks>` is read (`netman_parse_extra_networks`); native-only names appear as
+    rows in the summary (`native_networks`), so sync/Apply treat them as desired. `save` writes the
+    block then blanks `<ExtraNetworks>` (`netman_blank_extra_networks`; never creates the element,
+    touches nothing else). Same name in both the block and `<ExtraNetworks>` -> `native_overlap`,
+    shown as a red "in both" chip and warning; never auto-fixed.
+- **Why overlap matters — measured on this host (7.3.4, Docker 29.8.2), scratch objects only:**
+  `docker network connect <net> <ctr>` on a network a **running** container is already on exits **1**
+  with `Error response from daemon: endpoint with name <ctr> already exists in network <net>`. On a
+  created-but-never-started container the same command exited 0 (not an error), so the failure shows on
+  the start-after-create paths. In `update_container` a failure only logs "Could not connect one or
+  more additional networks"; it does not abort. (Same `docker network connect --ip` outside the
+  network's subnet exits 1: `invalid endpoint settings: no configured subnet contains IP address`.)
+- **Verified vs inferred.** Verified: the source diff; the library and API summary logic (`tests/run.php`);
+  the injector script against an rc2-shaped fixture in real headless Chromium
+  (`tests/inject-browser.test.js`, skips without playwright-core); the duplicate-connect behaviour above.
+  **Inferred, not observed:** how Unraid's markdown renders the row (assumed `dl > dt + dd(select +
+  ddcl widget)` followed by a sibling `blockquote`; the widget assumed to sit inside that `dd`), and
+  that dockerMan's own submit reads the select's option state. Everything about 7.4 beyond rc.2 source.
+  Hiding keys on the `dd` + `blockquote` next to it, so a different wrapper that still contains the
+  select in a `dd` works; a select not inside any `dd` fails soft (left visible).
+- **Not released.** Acceptance on a real 7.4 host is `docs/7.4-acceptance.md`; do not tag until it passes.
+
 ## Known limitations (see README.md for the user-facing version)
 
 - MAC on an additional network only works via ExtraParams, and only when that network's own
