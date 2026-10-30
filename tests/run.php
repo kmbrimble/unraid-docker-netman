@@ -232,6 +232,46 @@ $ex2 = '--network br0 --network name=proxynet,ip=172.18.0.9';
 checkEquals('adopt extra exact: state_only', 'state_only', netman_adopt('Grafana', 'br0', $ex2, '/nonexistent', [], true)['mode']);
 check('adopt extra refuses unknown --network form', !netman_adopt('Grafana', 'br0', '--network br0 --network=proxynet', '/nonexistent', [], true)['ok']);
 
+// ---- native <ExtraNetworks> (Unraid 7.4) -----------------------------
+
+checkEquals('native: parse comma list', ['a', 'b'], netman_parse_extra_networks('a,b'));
+checkEquals('native: parse mixed separators + dups', ['a', 'b', 'c'], netman_parse_extra_networks(" a, b\tc ,a,"));
+checkEquals('native: parse empty', [], netman_parse_extra_networks(''));
+
+$nrows = [['network' => 'proxynet', 'ip' => '172.18.0.3', 'alias' => null, 'mac' => null]];
+$split = netman_native_split(['proxynet', 'other', 'br0'], $nrows, 'br0');
+checkEquals('native split: overlap (in both) detected', ['proxynet'], $split['overlap']);
+checkEquals('native split: native-only imported, primary skipped', ['other'], $split['native_only']);
+$split0 = netman_native_split(['other'], [], 'bridge');
+check('native split: no overlap when block empty', $split0['overlap'] === [] && $split0['native_only'] === ['other']);
+
+function extraNetTpl(string $inner): string
+{
+    $tp = tempnam(sys_get_temp_dir(), 'netman');
+    file_put_contents($tp, "<?xml version=\"1.0\"?>\n<Container version=\"2\">\n  <Name>Grafana</Name>\n  <Network>bridge</Network>\n$inner  <PostArgs>&amp;&amp; docker x</PostArgs>\n  <Config Name=\"A\" Target=\"1\">v</Config>\n</Container>\n");
+    return $tp;
+}
+
+$tp = extraNetTpl("  <ExtraNetworks>proxynet,other</ExtraNetworks>\n");
+$before = file_get_contents($tp);
+check('native blank: returns true', netman_blank_extra_networks($tp));
+$after = file_get_contents($tp);
+$x = simplexml_load_file($tp);
+checkEquals('native blank: element emptied', '', (string) $x->ExtraNetworks);
+checkEquals('native blank: only that element changed', $before, str_replace('<ExtraNetworks/>', '<ExtraNetworks>proxynet,other</ExtraNetworks>', $after));
+unlink($tp);
+
+$tp = extraNetTpl('');
+$before = file_get_contents($tp);
+check('native blank: absent element ok', netman_blank_extra_networks($tp));
+check('native blank: absent element not created, file untouched', file_get_contents($tp) === $before);
+unlink($tp);
+
+$tp = extraNetTpl("  <ExtraNetworks/>\n");
+$before = file_get_contents($tp);
+check('native blank: already-empty untouched', netman_blank_extra_networks($tp) && file_get_contents($tp) === $before);
+unlink($tp);
+
 // ---- summary ---------------------------------------------------------
 
 echo "\n$count checks, $failures failures\n";

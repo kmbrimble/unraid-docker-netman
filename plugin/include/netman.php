@@ -538,6 +538,50 @@ function netman_write_template_field(string $path, string $element, string $newV
     return file_put_contents($path, $new) !== false;
 }
 
+// ---- native <ExtraNetworks> (Unraid 7.4+) ---------------------------------
+
+/**
+ * Names in dockerMan's native <ExtraNetworks> element (comma/space separated,
+ * names only — no IP/alias/MAC), de-duplicated, order kept. Absent/empty -> [].
+ */
+function netman_parse_extra_networks(string $value): array
+{
+    $names = preg_split('/[\s,]+/', trim($value), -1, PREG_SPLIT_NO_EMPTY);
+    return array_values(array_unique($names));
+}
+
+/**
+ * Split native names against the rows NetMan's own block carries.
+ * 'native_only': names NetMan will adopt as rows on Save (not primary, not already a row).
+ * 'overlap': names present in BOTH — dockerMan 7.4 would `network connect` them after
+ * NetMan's --network already did, and the second connect fails. Surfaced, never auto-fixed.
+ */
+function netman_native_split(array $nativeNames, array $rows, string $primary): array
+{
+    $have = array_column($rows, 'network');
+    $out = ['native_only' => [], 'overlap' => []];
+    foreach ($nativeNames as $n) {
+        if ($n === $primary) {
+            continue;
+        }
+        $out[in_array($n, $have, true) ? 'overlap' : 'native_only'][] = $n;
+    }
+    return $out;
+}
+
+/** Blank <ExtraNetworks> if the element exists and is non-empty; never creates it. */
+function netman_blank_extra_networks(string $path): bool
+{
+    $contents = file_get_contents($path);
+    if ($contents === false) {
+        return false;
+    }
+    if (!preg_match('#<ExtraNetworks(\s[^>]*)?>\s*[^<\s][^<]*</ExtraNetworks>#s', $contents)) {
+        return true; // absent, self-closed or already empty: nothing to do
+    }
+    return netman_write_template_field($path, 'ExtraNetworks', '');
+}
+
 // ---- adopt --------------------------------------------------------------
 
 /**
