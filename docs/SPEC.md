@@ -3,7 +3,7 @@
 You are building a new Unraid plugin from scratch in `/projects/unraid-multinet` (already `git init`ed, empty).
 Sibling projects for conventions: `/projects/unraid-secretsman` (READ its `unraid-secretsman.plg`, `scripts/build-plugin.sh`, `plugin/SecretsMan.page`, `.github/workflows/ci.yml`, and the "Shipping model" section of its `CLAUDE.md`) and `/projects/unraid-ops` (READ `CLAUDE.md` and `host-facts.md` — its operational constraints apply here too: never reboot, never stop array/docker, don't touch unrelated containers, don't edit stock OS files).
 
-Host access: `ssh -i /root/.ssh/unraid_secretsman root@192.168.0.10 '...'` works (Unraid 7.3.1, Docker 29.5.2, PHP 8.4, no python3 on host). The host docker CLI can also be used from this container via `docker run --rm -v /usr/bin/docker:/usr/local/bin/docker:ro -v /var/run/docker.sock:/var/run/docker.sock alpine docker ...` (this container's own docker CLI is 20.10 and lacks the advanced `--network` syntax — never use it for network tests). `gh` is authenticated as `kmbrimble`.
+Host access: `ssh -i /root/.ssh/unraid_secretsman root@192.168.0.10 '...'` works (Unraid 7.3.1 at the time of writing — host is now 7.3.4 with Docker 29.8.2; PHP 8.4, no python3 on host). The host docker CLI can also be used from this container via `docker run --rm -v /usr/bin/docker:/usr/local/bin/docker:ro -v /var/run/docker.sock:/var/run/docker.sock alpine docker ...` (this container's own docker CLI is 20.10 and lacks the advanced `--network` syntax — never use it for network tests). `gh` is authenticated as `kmbrimble`.
 
 ## Purpose
 

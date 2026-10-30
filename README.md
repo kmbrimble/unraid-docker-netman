@@ -55,6 +55,17 @@ than risk clobbering something you wrote.
   Fixed MAC address row, so you can set them up at the same time as everything else, before
   ever hitting Apply.
 
+## Unraid 7.4
+
+Unraid 7.4 adds its own **Additional Networks** dropdown to the Add/Update Container form. It stores
+network *names* only, so it cannot carry a fixed IP, alias or MAC — the thing this plugin exists
+for. On a 7.4 form, Docker NetMan hides that native row, imports anything already selected there as
+a row of its own, and clears it on submit so the same network is never connected twice (a second
+`docker network connect` to an already-attached network fails). Settings → Docker NetMan shows
+networks that came from the native field and warns when one is listed in both places. On 7.3.x
+nothing changes. This is based on Unraid's 7.4.0-rc.2 source and is not yet tested on a real 7.4
+host; see `docs/7.4-acceptance.md`.
+
 ## Compared to Docker Networks (mstrhakr)
 
 There's an existing Community Applications plugin,
