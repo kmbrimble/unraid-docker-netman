@@ -207,6 +207,7 @@ function dnmPrimaryName(c) { return c.primary.split(':')[0]; }
 function dnmSyncState(c) {
   if (c.no_template) return 'notemplate';
   if (!c.installed) return 'previous';
+  if ((c.native_overlap || []).length) return 'overlap';
   if (!c.running) return 'stopped';
   if (c.manually_managed) return 'manual';
   var desired = c.rows.map(function (r) { return r.network; });
@@ -216,7 +217,7 @@ function dnmSyncState(c) {
 
 var DNM_CHIPS = {
   notemplate: ['notpl', 'no template'], previous: ['prev', 'previous app'], stopped: ['stopped', 'stopped'],
-  manual: ['manual', 'manually managed'], sync: ['sync', 'in-sync'], drift: ['drift', 'drift']
+  manual: ['manual', 'manually managed'], overlap: ['drift', 'in both native field and NetMan'], sync: ['sync', 'in-sync'], drift: ['drift', 'drift']
 };
 
 // Networks shown as chips: the template's rows, or (no template) whatever is live besides the primary.
@@ -233,8 +234,10 @@ function dnmEditorHtml(c) {
   var showHint = dnmHintFor === c.name && c.running;
   var rowsHtml = c.rows.map(function (r, i) { return dnmRowHtml(c.name, r, i, macDisabled, showHint ? (c.live_networks[r.network] || {}).ip : null); }).join('');
   var warn = c.manually_managed ? '<div class="dnm-err">' + (c.path === 'extra' ? 'ExtraParams' : 'PostArgs') + ' already contains a network block this plugin did not write &mdash; refusing to rewrite it. Remove it by hand first, or use the other path.</div>' : '';
+  var nat = (c.native_networks || []).length ? '<div>' + h(c.native_networks.join(', ')) + ' come from the native Additional Networks field &mdash; they move into NetMan on Save.</div>' : '';
+  var dup = (c.native_overlap || []).length ? '<div class="dnm-err">' + h(c.native_overlap.join(', ')) + ' listed in BOTH the native Additional Networks field and NetMan&rsquo;s block &mdash; Unraid would connect it twice and the second connect fails. Save to clear the native field.</div>' : '';
   var n = h(c.name);
-  return warn + '<div class="dnm-rows">' + rowsHtml + '</div>' +
+  return warn + dup + nat + '<div class="dnm-rows">' + rowsHtml + '</div>' +
     '<button type="button" onclick="dnmAddRow(\'' + n + '\')">Add network</button>' +
     '<div>Path: <code>' + h(c.path) + '</code>' + (c.path === 'extra' ? ' (ExtraParams)' : ' (PostArgs)') + '</div>' +
     '<div class="dnm-fragment">' + h(dnmComputeFragment(c)) + '</div>' +
@@ -245,7 +248,7 @@ function dnmEditorHtml(c) {
 
 function dnmRenderRow(c) {
   var st = dnmSyncState(c), chip = DNM_CHIPS[st];
-  var extras = dnmExtraNets(c).map(function (r) { return '<span class="dnm-net">' + h(r.network) + (r.ip ? ' · ' + h(r.ip) : '') + '</span>'; }).join('') || '&mdash;';
+  var extras = dnmExtraNets(c).map(function (r) { return '<span class="dnm-net">' + h(r.network) + (r.ip ? ' · ' + h(r.ip) : '') + ((c.native_networks || []).indexOf(r.network) !== -1 ? ' <i>(native field)</i>' : '') + '</span>'; }).join('') || '&mdash;';
   var ip = (c.live_networks[dnmPrimaryName(c)] || {}).ip || c.primary_ip;
   var dot = c.installed && c.running ? 'green-orb' : 'grey-orb';
   var cog = c.no_template ? '<i class="fa fa-cog dnm-off" title="No dockerMan template: read-only"></i>'
