@@ -67,6 +67,14 @@ function netman_container_summary(string $templatePath, array $state): ?array
         $parsed = netman_parse_post($postArgs, $name, $expected);
     }
 
+    // Unraid 7.4's native <ExtraNetworks>: names only. Imported as rows here so
+    // sync/apply/editor treat them as desired; Save moves them into NetMan's block.
+    $native = netman_native_split(netman_parse_extra_networks((string) $xml->ExtraNetworks), $parsed['rows'], $primary);
+    $rows = $parsed['rows'];
+    foreach ($native['native_only'] as $n) {
+        $rows[] = netman_row_defaults(['network' => $n]);
+    }
+
     $driver = $path === 'extra' ? netman_docker_network_driver($primary) : null;
     $macSupported = $driver === 'bridge';
 
@@ -81,7 +89,9 @@ function netman_container_summary(string $templatePath, array $state): ?array
         'primary_mac' => $myMAC,
         'primary_mac_supported' => $macSupported,
         'path' => $path,
-        'rows' => $parsed['rows'],
+        'rows' => $rows,
+        'native_networks' => $native['native_only'],
+        'native_overlap' => $native['overlap'],
         'manually_managed' => $parsed['manually_managed'],
         'running' => $running,
         'live_networks' => $live,
@@ -153,7 +163,7 @@ switch ($action) {
                 $summary = [
                     'name' => $j['name'], 'repository' => '', 'primary' => netman_docker_container_primary($j['name']),
                     'primary_ip' => '', 'primary_mac' => '', 'primary_mac_supported' => false, 'path' => null,
-                    'rows' => [], 'manually_managed' => false, 'running' => $live[$j['name']],
+                    'rows' => [], 'native_networks' => [], 'native_overlap' => [], 'manually_managed' => false, 'running' => $live[$j['name']],
                     'live_networks' => $nets, 'template_path' => null, 'no_template' => true,
                 ];
             }
@@ -239,6 +249,12 @@ switch ($action) {
 
         $state = netman_state_set($state, $name, $primaryRaw, $path, $rows);
         netman_state_save($state);
+
+        // The rows now carry every network, including any imported from the native
+        // <ExtraNetworks>; blank it so dockerMan 7.4 doesn't connect them a second time.
+        if (!netman_blank_extra_networks($tpl['path'])) {
+            netman_respond(['ok' => false, 'error' => 'saved the network block but could not clear <ExtraNetworks> in the template — the native field and NetMan now both list these networks']);
+        }
 
         netman_respond(['ok' => true, 'path' => $path]);
     }
