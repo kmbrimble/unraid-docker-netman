@@ -1,5 +1,7 @@
 # Docker NetMan
 
+> Development happens on a private forge; this repository is a read-only mirror. Releases are published here.
+
 Unraid's dockerMan lets a container have exactly ONE network (Network Type + Fixed IP + MAC).
 This plugin lets each container have **additional** networks — each with its own optional
 fixed IP, alias, and (where the driver supports it) MAC — and makes them **persist across
