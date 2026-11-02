@@ -1,0 +1,72 @@
+name: CI
+
+# Gitea is the primary forge (GitHub is a read-only push mirror). The two jobs below are the required status
+# checks on main ("CI / php84 (pull_request)" and "CI / php81 (pull_request)"). They are separate jobs rather
+# than a matrix so the check names are fixed and predictable.
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  php84:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          fetch-depth: 0   # tags are needed by the release-readiness step
+
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962  # v2
+        with:
+          php-version: '8.4'
+          extensions: simplexml
+
+      - name: Lint
+        run: find plugin tests -name '*.php' -print0 | xargs -0 -n1 php -l
+
+      - name: Check .plg parses
+        run: php scripts/check-plg.php
+
+      - name: PHP tests
+        run: php tests/run.php
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
+        with:
+          node-version: '20'
+
+      - name: JS tests
+        run: |
+          node tests/js.test.js
+          node tests/globals.test.js
+
+      # A version that is not tagged yet is a release in the making: its .plg must already carry the final md5
+      # (nothing writes it back after the tag any more), and the build must be reproducible.
+      - name: Release readiness (untagged version must carry the final md5)
+        run: |
+          set -euo pipefail
+          VERSION=$(sed -rn 's|^<!ENTITY version[[:space:]]+"([^"]+)">.*|\1|p' docker.netman.plg)
+          if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
+            echo "v$VERSION is already tagged: nothing to enforce; reporting this build's md5 for comparison with the GitHub dry run."
+            bash scripts/check-md5.sh "$VERSION" --report-only
+          else
+            bash scripts/check-md5.sh "$VERSION"
+          fi
+
+  php81:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962  # v2
+        with:
+          php-version: '8.1'
+          extensions: simplexml
+
+      - name: Lint
+        run: find plugin tests -name '*.php' -print0 | xargs -0 -n1 php -l
+
+      - name: Check .plg parses
+        run: php scripts/check-plg.php
+
+      - name: PHP tests
+        run: php tests/run.php

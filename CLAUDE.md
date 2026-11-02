@@ -206,7 +206,7 @@ Real-browser testing (owner, 0.2.0) found a fourth bug beyond the rename's own s
 ## .plg parse guard
 
 `scripts/check-plg.php` parses the `.plg` with entities expanded and requires version, pluginURL
-and a 32-hex md5. Run by `ci.yml`, `release.yml` and `scripts/build-plugin.sh` (which refuses to
+and a 32-hex md5. Run by the Gitea CI, `release.yml` (GitHub) and `scripts/build-plugin.sh` (which refuses to
 build on failure). 0.3.6 was unparseable (a raw `<Name>` in CHANGES); escape angle brackets in
 CHANGES as `&lt;`/`&gt;`.
 
@@ -258,8 +258,8 @@ Same as `unraid-secretsman`: self-hosted `.plg` installed by URL from
 `raw.githubusercontent.com`, packaged `.txz` attached to a GitHub Release, `dist/` gitignored
 (built artifacts are release assets, not repo contents — confirmed by checking
 `unraid-secretsman`'s actual tracked files, not just its `.gitignore` wording). `scripts/build-plugin.sh`
-assembles the tree; since 0.3.5 it is CI that runs it, on every push to `main` that names an
-untagged `&version;` — see "Deploy and verify".
+assembles the tree; CI runs it (release-readiness on Gitea, then the GitHub release workflow on the mirrored tag) — see
+"Deploy and verify". The archive is deterministic (sorted names, fixed mtime), so the md5 is the same on both runners.
 
 **`raw.githubusercontent.com` caches for `max-age=300` (5 min) — a `curl -sI` 200 right after
 pushing does NOT mean the install will fetch the new content.** Hit this live during 0.3.2 →
@@ -285,7 +285,7 @@ and any `0.x` version is older than a date-based `2026.08.25`. The sibling plugi
 semantic versioning — they published fine and simply refused to install, with an error that
 reads like a corrupt download.
 
-Enforced, not remembered: `.github/workflows/release.yml` refuses to publish a version that does
+Enforced, not remembered: `.github/workflows/release.yml` (on GitHub, at the mirrored tag) refuses to publish a version that does
 not sort after the previous tag as a plain string, and `scripts/install-on-host.sh` checks the
 new version against the host's installed one before it tries, naming the `--forced` flag when
 crossing a boundary is genuinely what you want. Keep components single-digit, or zero-pad.
@@ -293,8 +293,8 @@ crossing a boundary is genuinely what you want. Keep components single-digit, or
 ## Test command
 
 `php tests/run.php` (no framework; run over SSH against the host's PHP 8.4 — this dev
-container has no local PHP) and `node tests/js.test.js`. CI (`.github/workflows/ci.yml`) runs
-both plus `php -l` on PHP 8.1 and 8.4.
+container has no local PHP) and `node tests/js.test.js`. CI (`.gitea/workflows/ci.yml`, Gitea runner) runs
+both plus `php -l` on PHP 8.1 and 8.4 (jobs `php84` and `php81`).
 
 ## Plugin manager quirk: don't re-verify what it already verifies
 
@@ -409,33 +409,35 @@ never trust a log line or exit code alone.
 
 ## Deploy and verify
 
-**Releasing is automatic and needs nobody's say-so.** `.github/workflows/release.yml` watches
-`main`: when the `.plg`'s `&version;` entity names a version with no tag yet, it lints, runs both
-suites, runs `scripts/build-plugin.sh`, writes the built package's real md5 back into the `.plg`,
-commits that, tags `v<version>`, and publishes the GitHub Release with the `.txz` and `.md5`
-attached. Every other push is a no-op, the workflow's own md5 commit included — the tag check
-runs before anything else.
+**Forge (changed 2 Nov 2026): Gitea is primary, GitHub is a read-only push mirror.** Develop against
+`https://git.kiztigs.com/kmbrimble/unraid-docker-netman` (`origin`, gt credential helper; `gt`, not `gh`, for issues/PRs).
+`github.com/kmbrimble/unraid-docker-netman` receives every push to Gitea within about a minute (`sync_on_commit`, plus an
+8-hourly sweep) and **must never be pushed to directly**: the mirror force-syncs and prunes refs, so anything that exists only
+on GitHub is lost. GitHub has Issues, Wiki, Projects, Discussions and PRs switched off. The `.plg` URLs
+(`raw.githubusercontent.com/.../main/docker.netman.plg` and the release assets) deliberately still point at GitHub.
+`main` is protected on Gitea: changes go through a PR, both CI checks (`CI / php84 (pull_request)`, `CI / php81 (pull_request)`)
+must be green, and butler-bot merges its own green PRs (no human approval).
 
-A release is therefore: **bump `&version;`, write the `###<version>` CHANGES entry, push.** Two
-things stay by hand, deliberately:
+**Releasing needs nobody's say-so, but it is two steps now.** Nothing writes back to the repo after the tag any more (a push
+mirror would discard it), so the md5 goes in *before* tagging:
 
-- **The CHANGES entry.** The workflow refuses to publish a version with no `###<version>` block
-  and uses that block verbatim as the release notes. A changelog is content, not mechanics;
-  generated from commit subjects it would be worthless.
-- **`&md5;` is not yours to compute.** Leave whatever is in the file. CI overwrites it with the
-  checksum of the package it just built, and asserts the two match before committing. Computing
-  it by hand was the step most likely to go wrong.
+1. In the PR that bumps `&version;` write the `###<version>` CHANGES entry and set `&md5;`. CI's release-readiness step
+   (any untagged `&version;`) builds the package and fails with `set &md5; to <value>`; push again with that value. Merge.
+2. Tag the merge commit on Gitea: `git tag v<version> && git push origin v<version>`. The tag is mirrored and
+   `.github/workflows/release.yml` on GitHub rebuilds, requires the same md5, and publishes the Release with the `.txz` and
+   `.md5` attached. See the `forge-release` skill. That workflow can also be dispatched by hand on GitHub as a dry run.
+
+The CHANGES entry stays by hand and is used verbatim as the release notes. The first real release on this layout is the final
+proof of the tag path; it had not happened when this section was written.
 
 `dist/` is still gitignored — artifacts are release assets, not repo contents.
 `scripts/build-plugin.sh` still runs locally for a test build, but needs `xz`, which the
-claude-code container does not have and the runner does. That is one more reason the build lives
-in CI now.
+claude-code container does not have and the runners do.
 
-CI (`.github/workflows/ci.yml`) is unchanged and still runs `php -l`, `php tests/run.php` and
-`node tests/js.test.js` on PHP 8.1 and 8.4 on every push. The release workflow repeats those
-checks rather than trusting a sibling workflow's result it cannot see.
+Gitea CI (`.gitea/workflows/ci.yml`) runs `php -l`, `php tests/run.php` and `node tests/js.test.js` on PHP 8.4 and the PHP
+tests on 8.1 on every push and PR. The GitHub release workflow repeats those checks rather than trusting a result it cannot see.
 
-**Installing on the host is the one step CI cannot do** — GitHub's runners have no route to
+**Installing on the host is the one step CI cannot do** — GitHub's runners (and the Gitea runner VM) have no route to
 192.168.0.10. `scripts/install-on-host.sh` does it from the claude-code container, and running it
 is part of releasing, not a separate decision: it confirms the release exists, waits until the
 raw `.plg`'s own `&version;` *and* `&md5;` match the published release (the 5-minute CDN cache
