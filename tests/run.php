@@ -232,6 +232,30 @@ $ex2 = '--network br0 --network name=proxynet,ip=172.18.0.9';
 checkEquals('adopt extra exact: state_only', 'state_only', netman_adopt('Grafana', 'br0', $ex2, '/nonexistent', [], true)['mode']);
 check('adopt extra refuses unknown --network form', !netman_adopt('Grafana', 'br0', '--network br0 --network=proxynet', '/nonexistent', [], true)['ok']);
 
+// ---- reproducible build ------------------------------------------------
+// The .plg's &md5; is committed before the tag and the GitHub release workflow rebuilds and requires it to match,
+// so the .txz must not depend on the machine. xz >= 5.6 compresses multi-threaded by default (sizes go into the
+// block header), and cp/mkdir follow the caller's umask. Each variant perturbs something a runner can differ in.
+
+$root = __DIR__ . '/..';
+$md5s = [];
+foreach ([
+    'plain' => '',
+    'umask' => 'umask 077; TZ=Asia/Tokyo ',
+    'xz-mt' => 'umask 002; XZ_DEFAULTS=-T0 ',
+    'xz-st' => 'XZ_DEFAULTS=-T1 ',
+] as $tag => $prefix) {
+    $v = "repro-$tag";
+    $out = [];
+    exec('bash -c ' . escapeshellarg($prefix . 'bash ' . escapeshellarg("$root/scripts/build-plugin.sh") . " $v") . ' 2>&1', $out, $code);
+    check("build ($tag) succeeds", $code === 0);
+    if ($code !== 0) echo implode("\n", $out), "\n";
+    $md5s[$tag] = @md5_file("$root/dist/docker.netman-$v.txz");
+    @unlink("$root/dist/docker.netman-$v.txz");
+}
+@unlink("$root/dist/docker.netman.md5");
+check('build is byte-reproducible across umask, TZ and XZ_DEFAULTS: ' . json_encode($md5s), count(array_unique($md5s)) === 1);
+
 // ---- summary ---------------------------------------------------------
 
 echo "\n$count checks, $failures failures\n";
