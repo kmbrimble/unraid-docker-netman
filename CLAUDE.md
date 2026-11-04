@@ -53,135 +53,42 @@ reinstall/force-update/"Previous Apps" — no runtime hook, no plugin database).
   `node tests/js.test.js` share one implementation). Both are pure, side-effect-free, and
   round-trip: parse → edit → serialize → parse is idempotent (tested).
 
+
 ## Injection mechanism
 
-- `DockerNetMan.page`: `Menu="Utilities"` page under Settings (`Title="Docker NetMan"`, reachable at
-  `Settings/DockerNetMan` — same pattern `unraid-secretsman`'s `SecretsMan.page` uses). **Not** a
-  Docker tab: `Menu="Docker:3"` was tried first and doesn't work — `DockerContainers.page`
-  (the Docker section's `Menu="Docker:1"` anchor) sets `Tabs="false"`, and
-  `MainContentTabless.php`'s handling of an untabbed menu group is to concatenate every page in
-  that group onto one page in sequence, not render separate tabs (`webGui/include/PageBuilder.php`
-  confirms `$myPage = $site[basename($path)]` — the URL's last path segment is a bare lookup key
-  into every registered page regardless of directory, and any page sharing a `Menu="Docker:N"`
-  group with an untabbed anchor page renders inline below it, not as a tab). Confirmed live:
-  first shipped as `Menu="Docker:3"`, and a real-browser screenshot showed the whole Networks UI
-  concatenated below the Docker page's own ADD CONTAINER/START ALL button row. Fixed in 0.2.0 by
-  moving the whole UI off `/Docker` entirely and injecting a single small button on the Docker
-  page instead (via `DockerNetManInject.page`, matched on `^/Docker` excluding the Add/Update
-  Container paths, appended into `.js-actions` next to the stock Add Container button) that
-  links to `/Settings/DockerNetMan`.
-- The page-lookup mechanism means the URL prefix before the page's filename is cosmetic — any
-  page named `X.page` is reachable at `/<anything>/X` as long as `basename()` of the path
-  matches `X`. `Settings/DockerNetMan` works because `unraid-secretsman` already proved that's the
-  convention the Settings nav actually links to for `Menu="Utilities"` pages; nothing about the
-  routing itself required that specific prefix.
-- `DockerNetManInject.page`: `Menu="Buttons:5"`, `Link="nav-user"`, `Markdown="false"` — a pure
-  `<script>` injector, the supported non-patching vehicle (`DefaultPageLayout.php` evals every
-  `Menu="Buttons"` page in `<head>` on every page load; `ipmi`'s `IPMIButton.page` is the stock
-  precedent). Only acts when `location.pathname` matches `^/Docker/(AddContainer|UpdateContainer)`.
-  Finds `input[name=contMyMAC]`, walks up to its row container (`dl`/`div`), inserts a matching
-  sibling row below it. Hooks the form's submit via a **capture-phase listener on `document`**,
-  not the form itself — capture/bubble ordering is by DOM tree position, so a document-level
-  capture listener runs before the form's own bubble-phase inline `onsubmit="prepareConfig(this)"`
-  handler regardless of registration order on the same element. Composes `contExtraParams`/
-  `contPostArgs` there, before dockerMan reads them. Fails soft throughout: endpoint unreachable
-  or the row not found both degrade to "no section, form submits untouched" rather than blocking
-  submit — nothing here throws past a try/catch on the compose step.
-- **This container still has no browser** — every fix above (CSRF, tab placement, the
-  `rowsEqual(null)` crash, button width, row stacking) was diagnosed from the owner's real-
-  browser report and root-caused/fixed/tested server-side (node/PHP unit tests, `curl` against
-  the live host), not by this session rendering the page itself. `window.dockerNetman.inject()`
-  remains exposed for the owner to re-run and inspect in devtools. The DOM insertion point
-  (`closest('dl')` / `closest('div')` fallback chain in `insertBlock()`) is unchanged since
-  0.1.0 — **confirmed correct live at 0.3.1**: the owner's real-browser review found the row
-  rendering in the right place with the right fields, so this is no longer an open question,
-  just still something only ever verified from the owner's side, not this one.
+Generic rules (page lookup by `basename`, why `Menu="Docker:N"` concatenates instead of tabbing,
+the `Menu="Buttons"` injector vehicle, capture-phase submit listener, fail soft, feature detection,
+strict-mode IIFE): see the `unraid-webgui-plugin-pages` skill, "Page registration". The 0.1.0–0.3.1
+narrative (the `Docker:3` attempt, the screenshot) is in `docs/history.md`.
+
+- `DockerNetMan.page`: `Menu="Utilities"`, `Title="Docker NetMan"`, at `/Settings/DockerNetMan` (the
+  same convention as `unraid-secretsman`'s `SecretsMan.page`). It is the whole UI.
+- `DockerNetManInject.page`: `Menu="Buttons:5"`, `Link="nav-user"`, `Markdown="false"`, a pure `<script>`.
+  - On `^/Docker` (excluding the Add/Update Container paths) it appends one button into `.js-actions`,
+    next to the stock Add Container button, linking to `/Settings/DockerNetMan`.
+  - On `^/Docker/(AddContainer|UpdateContainer)` it finds `input[name=contMyMAC]`, walks up to its row
+    container and inserts a matching sibling row below it (`insertBlock()`: `closest('dl')`, then
+    `closest('div')`; unchanged since 0.1.0, confirmed correct in the owner's real browser at 0.3.1).
+  - A capture-phase listener on `document` composes `contExtraParams`/`contPostArgs` before the form's
+    inline `onsubmit="prepareConfig(this)"` reads them.
+  - Fails soft: endpoint unreachable or row not found means no section and the form submits untouched;
+    nothing throws past the try/catch on the compose step.
+  - `window.dockerNetman.inject()` is exposed to re-run it from devtools.
 
 ## CSRF
 
-No explicit check in `include/api.php` — `webGui/include/local_prepend.php` (Unraid's global
-`auto_prepend_file`) already enforces CSRF on every plugin POST and **consumes**
-`$_POST['csrf_token']` once it validates. A second check would always see it empty and 403
-every legitimate request (this is `unraid-secretsman`'s own documented mistake-and-revert, not
-a hypothetical — its `store_api.php` has the same comment). Trust the platform's enforcement.
+Mechanism, failure shape (200 with an empty body) and the no-plugin-side-check rule: see the
+`unraid-webgui-plugin-pages` skill, "Requests: transport and CSRF". Repo specifics (constraints 1–2):
 
-**But the client still has to send the token — nothing does that for you outside jQuery.**
-`local_prepend.php` accepts it two ways: `$_POST['csrf_token']` or the `X-CSRF-Token` header
-(`$csrf_token = $_POST['csrf_token'] ?? ($_SERVER['HTTP_X_CSRF_TOKEN'] ?? null);` — missing
-either way calls `csrf_terminate()`, which just `exit`s with no output, no error page). Real
-value lives in `state/var.ini`, and `webGui/include/DefaultPageLayout/HeadInlineJS.php`
-declares it as a global JS var (`var csrf_token = "...";`) on every page load, precisely so
-page scripts can read it. `DockerNetMan.page` gets this for free — it uses jQuery `$.post`, and
-Unraid's global `$.ajaxPrefilter` appends `csrf_token` to every jQuery AJAX call automatically.
-**`DockerNetManInject.page` does not get this for free** — it's a plain injected `<script>` making
-its own `XMLHttpRequest` calls, so the prefilter never touches them. First shipped without
-sending the token at all: `fetchNetworks()` got a silent empty body back (the terminate path,
-not a visible error), which the injector correctly treated as "endpoint unreachable" — a
-real-browser test confirmed this live (endpoint appeared unreachable in devtools). Fixed by a
-shared `dnmPost()` helper that sends the token BOTH ways (belt and braces): as `X-CSRF-Token` and
-as a `csrf_token` body field, reading `window.csrf_token`. **Verified against the real host, not
-just read from source**: reused an active root session cookie (`/var/lib/php/sess_*`, matched
-to its `unraid_<md5(host)>` cookie name) to `curl` `include/api.php` directly — same session
-without a CSRF token gets `200` with an **empty body** (confirming `csrf_terminate()`'s exact
-failure shape); the same session with `X-CSRF-Token` set gets `200` with the real JSON payload.
-**Any future page here that talks to `include/api.php` outside jQuery needs this same
-treatment** — it's not specific to the Add/Update Container injector.
+- `include/api.php` has no CSRF check of its own, deliberately.
+- `DockerNetMan.page` uses jQuery `$.post`, so Unraid's `$.ajaxPrefilter` adds the token.
+- `DockerNetManInject.page` uses plain `XMLHttpRequest`, so its shared `dnmPost()` helper reads
+  `window.csrf_token` and sends it **both** as `X-CSRF-Token` and as a `csrf_token` body field
+  (`local_prepend.php` reads `$_POST['csrf_token'] ?? $_SERVER['HTTP_X_CSRF_TOKEN']`). Without it,
+  `fetchNetworks()` saw the empty body and the injector reported "endpoint unreachable".
+- **Any future page here that talks to `include/api.php` outside jQuery needs the same treatment.**
 
-## 0.3.0 real-browser fixes
-
-Real-browser testing (owner, 0.2.0) found a fourth bug beyond the rename's own scope:
-
-- **`rowsEqual(a, b)` crashed when `b` (expected) was `null`** — `TypeError: Cannot read
-  properties of null (reading 'length')`. `DockerNetManInject.page`'s `parseExistingIntoState()`
-  passes `expected=null` on the Update Container page (it has no `state.json` client-side, so
-  there's nothing meaningful to pass — an earlier version passed `[]`, which is wrong for a
-  different reason: it made every container with existing rows look manually-managed the
-  moment `expected` wasn't available, since `[]` means "expected nothing"). The throw aborted
-  `parsePost()`/`parseExtra()` entirely, so a real, correctly-written row (confirmed present in
-  both the template and `state.json`) silently vanished from the edit page — the bug looked
-  like the feature didn't work at all, when the underlying design was fine. Reproduced before
-  the fix:
-  ```
-  $ node -e 'var m=require("./plugin/docker-netman-core.js"); m.parsePost("&& docker network connect --ip 172.18.0.3 proxynet terrible-butler","terrible-butler",null)'
-  Uncaught TypeError: Cannot read properties of null (reading 'length')
-  ```
-  Fixed: `rowsEqual` treats `b == null` as "unknown — trust what was parsed" (returns `true`,
-  so `manually_managed` comes out `false`), and the injector now correctly passes `null` (not
-  `[]`) for both `parseExtra`/`parsePost` calls. After the fix, the same call:
-  ```
-  $ node -e 'var m=require("./plugin/docker-netman-core.js"); console.log(JSON.stringify(m.parsePost("&& docker network connect --ip 172.18.0.3 proxynet terrible-butler","terrible-butler",null)))'
-  {"remaining":"","primary_mac":null,"rows":[{"network":"proxynet","ip":"172.18.0.3","alias":null,"mac":null}],"found":true,"manually_managed":false}
-  ```
-  **Checked the PHP side (`include/netman.php`) for the same assumption — not present.**
-  `netman_rows_equal(array $a, array $b)` is strictly typed and every real caller
-  (`include/api.php`, both `save` and the container-summary path) always passes a real array
-  from `netman_state_get()`, which itself always returns `[]` rather than `null` when there's
-  no record. The null-expected case is specific to the client, which is the only caller with no
-  `state.json` to read at all. `tests/js.test.js` covers `expected=null` for both paths plus
-  this exact real-world string. **Confirmed fixed live** (0.3.1 owner review, real browser at
-  192.168.0.10:81): the proxynet row now renders on the Update Container page with the correct
-  network selected (bridge excluded from options, as designed), Fixed IP `172.18.0.3`, and a
-  full, correct preview line — no error banner, no truncation.
-- **The "Add network" button stretched to the full page width** on a wide viewport — stock
-  dockerMan CSS applies `input`/`select`/`button { width: 100% }` inside a form row, and a
-  narrow test window had hidden this by making 100% look reasonable by coincidence. Same class
-  of bug as `unraid-secretsman`'s Browse-button overflow fix (see its CHANGES). Fixed **in
-  0.3.0** with `.dnm-block button { width: auto }` — **this did not actually work**, confirmed
-  by the owner's 0.3.1 live-browser DOM measurement at 1920px: the rule was present and
-  matched (only width rule the owner's own matching-rules scan could see) but computed width
-  stayed ~1198px, ~100% of the `dd.dnm-block` parent. Even `display: inline-block !important`
-  on top of it made no difference. Only `width: fit-content !important` actually worked (111px,
-  comparable to dockerMan's own EDIT button at 86px) — something in a stock stylesheet beats a
-  plain (non-`!important`) width rule at this specific insertion point, cross-origin/scan-
-  invisible to the owner's own rule enumeration. **`width: auto` is empirically insufficient
-  here — don't reintroduce it.** Fixed in 0.3.1 with `width: fit-content !important` plus a
-  `min-width`, applied both in `DockerNetManInject.page` and pre-emptively to every button
-  `DockerNetMan.page` (the Settings page) renders, not just the one already caught live.
-- **Per-row fields ran across the page** (network/IP/alias/MAC/Remove in one flex strip) instead
-  of stacking down it — unusable on a phone-width viewport. Changed to one labelled block per
-  field, matching dockerMan's own dl/dt/dd rhythm, stacked vertically within each row's own
-  bordered block. **Confirmed fixed live** (0.3.1 owner review): fields render as a stacked,
-  bordered, native-looking block.
+The live curl proof (same session, with and without the token) is in `docs/history.md`.
 
 ## Settings page (0.3.6 redesign) and Adopt (0.3.8)
 
@@ -192,54 +99,43 @@ Real-browser testing (owner, 0.2.0) found a fourth bug beyond the rename's own s
   `include_previous=1`; containers with no template are listed read-only. Order is
   case-insensitive (`netman_name_cmp`), server-side — the client keeps the server's order.
   Toggle state lives in localStorage.
-- **Verified in a real browser by the owner at 0.3.7** (1920x1012 and 375px): 1.93 screens tall
-  (was 8.5), 44 containers in case-insensitive order, previous-apps toggle both ways, inline
-  one-at-a-time editor, bridge member list collapsed to 28px, create form hidden by default, no
-  body horizontal scroll on mobile.
 - **Adopt** (`netman_adopt`, API `adopt`, `dry_run=1` reports the plan): records a hand-written
   block in state.json. Exact canonical match → state only, template untouched; otherwise only
   that path's field (PostArgs or ExtraParams, never the other) is normalised, after a confirm
   showing before/after. Refuses when any network token is not accounted for by a parsed row.
   Never pins live IPs: the editor only offers them as a one-click fill.
 - The docker.networks (mstrhakr) plugin was checked for and is **not installed** on this host.
+- The owner's 0.3.7 real-browser measurements of this page are in `docs/history.md`.
+
+## Real-browser fixes (0.3.0–0.3.1)
+
+The rules these produced are constraints 3 and 7 below, and the generic styling rules are in the
+`unraid-webgui-plugin-pages` skill, "Styling and widgets". The full write-up (the `rowsEqual(null)`
+crash with before/after repro, the `width: auto` measurement, row stacking) is in `docs/history.md`.
 
 ## .plg parse guard
 
-`scripts/check-plg.php` parses the `.plg` with entities expanded and requires version, pluginURL
-and a 32-hex md5. Run by the Gitea CI, `release.yml` (GitHub) and `scripts/build-plugin.sh` (which refuses to
-build on failure). 0.3.6 was unparseable (a raw `<Name>` in CHANGES); escape angle brackets in
-CHANGES as `&lt;`/`&gt;`.
+Generic `.plg` XML rules: see the `unraid-plugin-packaging` skill, "The .plg is XML with entity
+substitution". Here: `scripts/check-plg.php` is the guard. It runs in the Gitea CI, `release.yml` (GitHub)
+and `scripts/build-plugin.sh` (which refuses to build on failure). 0.3.6 was unparseable because of a raw
+`<Name>` in CHANGES; escape angle brackets there as `&lt;`/`&gt;`.
 
-## Browser verification (headless Chromium — this container CAN drive a real browser)
+## Browser verification
 
-Earlier sections say "no browser"; that is superseded. The reliable method, used for the 0.3.9
-acceptance run and wrapped in `scripts/browser-check.js` (repo only; `build-plugin.sh` packages
-`plugin/` alone, so it never reaches the txz):
+Method (scratch `playwright-core`, cached `chrome-headless-shell`, reused root session, never print the
+session id, prefer it to in-app preview panes): see the `unraid-webgui-plugin-pages` skill, "Verifying in
+a real browser". Here:
 
-- `playwright-core` installed in a scratch dir in this container (`npm i playwright-core`; no host
-  packages), launched with `executablePath` = the cached
-  `~/.cache/ms-playwright/chromium_headless_shell-*/…/chrome-headless-shell`.
-- Auth by reusing the newest active root PHP session on the host (newest `/var/lib/php/sess_*`
-  containing `unraid_user|s:4:"root"`) as cookie `unraid_` + md5(`192.168.0.10`) — host WITHOUT the
-  port, per `local_prepend.php`'s `session_name`. Never print the session id.
-- `NODE_PATH=<scratch>/node_modules node scripts/browser-check.js /Main /Docker /Settings/DockerNetMan`
-  reports load time, pageerrors, console errors, `typeof window.before` and leaked globals.
-  0.3.9 result: all three pages ~3–4s, zero errors, `before` a Date, no leaks, Settings page
-  1952px tall at 1920x1012, no horizontal scroll.
-- Prefer this to the Cowork in-app preview pane, which is unreliable: it later stalled on every
-  page including /Main.
+- `scripts/browser-check.js` wraps it (repo only; `build-plugin.sh` packages `plugin/` alone, so it never
+  reaches the txz):
+  `NODE_PATH=<scratch>/node_modules node scripts/browser-check.js /Main /Docker /Settings/DockerNetMan`.
+  It reports load time, pageerrors, console errors, `typeof window.before` and leaked globals.
+- Session: the newest `/var/lib/php/sess_*` containing `unraid_user|s:4:"root"`, as cookie `unraid_` +
+  md5(`192.168.0.10`).
+- `tests/globals.test.js` and the strict-mode IIFE scoping stay as hygiene.
 
-**The 0.3.8 "`before.getTime is not a function`" report was that preview browser misbehaving, not
-the plugin** — in real headless Chromium `typeof window.before === "object"` after the uptime
-ticker ran, and none of `h`/`API`/`dnmPost`/`dnmRender` leaked. The strict-mode IIFE scoping in
-0.3.9 and `tests/globals.test.js` stay as hygiene regardless. My own reading of the code never
-found any assignment to `before` either.
-
-**Adopt acceptance (owner, real UI in headless Chromium, 0.3.9):** with only Grafana's key removed
-from `state.json` the row showed "manually managed"; Adopt → dialog said state.json only, template
-untouched; confirming turned the row "in-sync" WITHOUT a reload and reopened the editor with
-"currently 172.18.0.4 — set as fixed IP? use it". No page errors; `my-Grafana.xml` md5
-`d14666a146662e134715db6f4cefa9d3` unchanged throughout; end state identical to pre-test.
+The 0.3.9 results, the 0.3.8 `before.getTime` false alarm and the Adopt acceptance run are in
+`docs/history.md`.
 
 ## Known limitations (see README.md for the user-facing version)
 
@@ -254,137 +150,80 @@ untouched; confirming turned the row "in-sync" WITHOUT a reload and reopened the
 
 ## Shipping model
 
-Same as `unraid-secretsman`: self-hosted `.plg` installed by URL from
-`raw.githubusercontent.com`, packaged `.txz` attached to a GitHub Release, `dist/` gitignored
-(built artifacts are release assets, not repo contents — confirmed by checking
-`unraid-secretsman`'s actual tracked files, not just its `.gitignore` wording). `scripts/build-plugin.sh`
-assembles the tree; CI runs it (release-readiness on Gitea, then the GitHub release workflow on the mirrored tag) — see
-"Deploy and verify". The archive is deterministic (sorted names, fixed mtime), so the md5 is the same on both runners.
+Packaging, install and CDN-cache rules: see the `unraid-plugin-packaging` skill; release mechanics: the
+`forge-release` skill. Here:
 
-**`raw.githubusercontent.com` caches for `max-age=300` (5 min) — a `curl -sI` 200 right after
-pushing does NOT mean the install will fetch the new content.** Hit this live during 0.3.2 →
-0.3.3: pushed the fix, `curl -sI` showed 200 within seconds, but `plugin install` on the host
-fetched a CDN edge that still had 0.3.2's body cached, silently reinstalling the wrong version
-(no error — the `.plg` it fetched genuinely declared version 0.3.2, so everything downstream,
-including the txz filename it requested, was internally consistent with that stale content).
-Caught by re-`curl`ing the raw URL's *body* (`grep -o 'version.*'`), not just its status code,
-immediately after install and noticing it disagreed with what was just pushed. **When cutting
-more than one release within a few minutes of each other, verify the raw URL's actual content
-(not just its HTTP status) matches the latest push before installing — or just wait out the
-5-minute window.** The versioned `.txz` filename itself isn't the risk (each version's filename
-is unique, so it can't silently reuse a stale package); the risk is entirely in the `.plg`
-document's own content being stale.
+- Self-hosted `.plg` installed by URL from `raw.githubusercontent.com`, packaged `.txz` attached to a
+  GitHub Release, `dist/` gitignored (artifacts are release assets, not repo contents).
+- `scripts/build-plugin.sh` assembles the tree; CI runs it (release-readiness on Gitea, then the GitHub
+  release workflow on the mirrored tag). The archive is deterministic (sorted names, fixed mtime), so the
+  md5 is the same on both runners.
+- The raw `.plg` caches for `max-age=300`. The versioned `.txz` filename is not the risk (each version's
+  name is unique); the stale `.plg` body is. `scripts/install-on-host.sh` waits for the raw `.plg`'s
+  `&version;` and `&md5;` to match the release. The 0.3.2 → 0.3.3 incident is in `docs/history.md`.
 
-## Version numbers are compared with strcmp, not semantically
+## Version numbers are compared with strcmp
 
-`dynamix.plugin.manager/scripts/plugin` decides whether an install is an upgrade with
-`strcmp($version, $installed_version) < 0`, and prints `plugin: not installing older version`
-when it is. That is a plain string comparison, so **`0.3.10` is older than `0.3.9`** to Unraid,
-and any `0.x` version is older than a date-based `2026.08.25`. The sibling plugin
-`unraid-secretsman` lost two releases to exactly this after switching from date-based to
-semantic versioning — they published fine and simply refused to install, with an error that
-reads like a corrupt download.
-
-Enforced, not remembered: `.github/workflows/release.yml` (on GitHub, at the mirrored tag) refuses to publish a version that does
-not sort after the previous tag as a plain string, and `scripts/install-on-host.sh` checks the
-new version against the host's installed one before it tries, naming the `--forced` flag when
-crossing a boundary is genuinely what you want. Keep components single-digit, or zero-pad.
+Rule: see the `unraid-plugin-packaging` skill, "Versions are compared with strcmp". `0.3.10` would sort
+before `0.3.9`. Enforced here by `.github/workflows/release.yml` (on GitHub, at the mirrored tag), which
+refuses a version that does not sort after the previous tag as a plain string, and by
+`scripts/install-on-host.sh`, which checks against the host's installed version and names its `--forced`
+flag when crossing a boundary is intended. Keep components single-digit, or zero-pad.
 
 ## Test command
 
-`php tests/run.php` (no framework; run over SSH against the host's PHP 8.4 — this dev
-container has no local PHP) and `node tests/js.test.js`. CI (`.gitea/workflows/ci.yml`, Gitea runner) runs
-both plus `php -l` on PHP 8.1 and 8.4 (jobs `php84` and `php81`).
+`php tests/run.php` (no framework), `node tests/js.test.js` and `node tests/globals.test.js`. All three run locally in
+the claude-code container (PHP 8.4 CLI is on PATH; earlier notes said to run PHP over SSH on the host,
+which is no longer needed). Gitea CI (`.gitea/workflows/ci.yml`) runs `php -l`, `scripts/check-plg.php`
+and all three on PHP 8.4 (job `php84`), and `php -l`, the plg check and the PHP tests on 8.1 (job `php81`).
 
-## Plugin manager quirk: don't re-verify what it already verifies
+## Plugin manager quirk
 
-0.1.0 → 0.2.0 shipped with a custom bash-level md5 re-check in the install script, reading a
-versionless `&plgPATH;/&name;.md5` sidecar file written by its own `<FILE Name=... INLINE>`
-block — modelled on `unraid-secretsman`'s `.plg`. **Upgrading over an existing install failed
-live** with "package md5 mismatch" even though the 0.2.0 download was fine: Unraid's plugin
-manager (`dynamix.plugin.manager/scripts/plugin`, the file-fetch function) only re-verifies
-and re-fetches a `FILE` when it declares its own `<MD5>`/`<SHA256>` tag — a plain `<INLINE>`
-file with none never gets rewritten once something already exists at that path ("if file
-already exists ... do not overwrite"). The sidecar stayed stuck at 0.1.0's value forever, and
-our own redundant check compared the new txz against it and failed. **Fixed by deleting the
-sidecar and the custom check entirely** — the `.txz` `FILE` block's own `<MD5>` tag already
-gets verified by the plugin manager itself, in the same function, on the branch that DOES
-re-fetch on a mismatch, before the install script ever runs. Same shape of mistake as the CSRF
-lesson below: a defensive re-check of something the platform already guarantees, except this
-one was actively wrong instead of merely redundant. **Any future `.plg` FILE block for this
-plugin that needs to store a value across versions must not rely on file-overwrite — either
-give it a real `<MD5>`/`<SHA256>` so the platform's own reuse-or-refetch logic applies, or
-write/overwrite it unconditionally from inside the `Run="/bin/bash"` script, not via a second
-declarative `FILE` entry.**
+Rule (a `FILE` with no `<MD5>`/`<SHA256>` is never overwritten; never re-check the package md5): see the
+`unraid-plugin-packaging` skill, "FILE blocks and checksums". Constraint 4 below is this repo's instance
+(0.1.0 → 0.2.0 broke upgrades with "package md5 mismatch"); the narrative is in `docs/history.md`.
 
 ## Live verification (C.3, terrible-butler)
 
-Confirmed end to end on the real host, not simulated:
+The core design was proven end to end on the real host: `save` wrote the PostArgs block into
+`my-terrible-butler.xml`, dockerMan's real `xmlToCommand()` rendered it, `rebuild_container` recreated
+the container and `proxynet` came back at its static IP with no manual connect. Full trace in
+`docs/history.md`; method in the `unraid-live-host-testing` skill.
 
-- `include/api.php`'s `save` action, run for real against `terrible-butler` (primary `bridge`,
-  no state.json record yet), wrote `<PostArgs>&amp;&amp; docker network connect --ip 172.18.0.3
-  proxynet terrible-butler</PostArgs>` into the live template and recorded it in `state.json` —
-  verified by reading the template bytes back, not by trusting the JSON response alone.
-- Rendered that template through dockerMan's **real** `xmlToCommand()` (the same
-  render-harness pattern `unraid-secretsman` uses — `docs/verify-recreate.sh`'s sibling,
-  bootstraps only `Wrappers.php` + the live `Helpers.php`, no HTTP): the resulting command ends
-  in exactly `... 'ghcr.io/kmbrimble/terriblebutler:latest' && docker network connect --ip
-  172.18.0.3 proxynet terrible-butler` — proving the design produces a correct command through
-  dockerMan's own code, not just this plugin's own parser.
-- **The actual recreate** was done via
-  `/usr/local/emhttp/plugins/dynamix.docker.manager/scripts/rebuild_container terrible-butler`
-  — dockerMan's own script, the same `removeContainer` + `xmlToCommand()`-built `docker run -d`
-  path "Force Update" uses. This is the right tool for a headless session to trigger a real
-  recreate: this environment's `~/.claude/hooks/docker-cleanup-guard.sh` blocks a bare `docker
-  stop`+`docker rm` pair on any container this session didn't itself create (confirmed live —
-  it refused the raw sequence with "requires explicit approval"), but does not gate
-  `rebuild_container`, and `rebuild_container` is also more faithful: it's dockerMan's actual
-  Force Update code path, not a hand-assembled approximation of it. **Use
-  `rebuild_container <name>` for any future live recreate test, not raw `docker stop`/`rm`.**
-  Confirmed via `docker inspect`: container ID changed (`b1f850ab2791...` → `ebee8f955b60...`),
-  both `bridge` (172.17.0.21) and `proxynet` (172.18.0.3, real `IPAMConfig.IPv4Address` — a
-  static assignment, not a coincidental free-pool grab) came back automatically with zero
-  manual `docker network connect` needed.
-- `docs/verify-recreate.sh` (read-only: `docker inspect` + `curl` + `docker exec ... curl`, no
-  writes) passed before the recreate (manually-attached baseline), immediately after the
-  `rebuild_container` recreate, and again after a plain `docker stop`/`docker start` cycle on
-  the recreated container (this pair IS allowed by the guard hook — it only gates removal, not
-  stop/start) — `https://butler.kiztigs.com/` returned 200 and NPM's `docker exec ... curl
-  http://terrible-butler:2626/` returned 200 in all three runs, and the network attachment
-  survived the stop/start with the same container ID.
-- Template backup: `/boot/config/plugins/unraid-multinet/backup/my-terrible-butler.xml.bak`,
-  confirmed byte-identical to the pre-edit original via `md5sum` before any write. Not needed
-  in the end (no rollback required) — left in place per the spec ("back up... then..."). Sits
-  at the plugin's old flash path from before the 0.3.0 rename — nothing reads it, so it staying
-  there is harmless, just a leftover.
+- `docs/verify-recreate.sh` is the read-only check for that container (`docker inspect` + `curl` +
+  `docker exec ... curl`, no writes): run it before a recreate, right after, and after a
+  `docker stop`/`docker start` cycle.
+- Use `rebuild_container <name>` for any live recreate, not raw `docker stop`/`rm`.
+- Leftover backup `/boot/config/plugins/unraid-multinet/backup/my-terrible-butler.xml.bak` sits at the
+  pre-rename flash path. Nothing reads it.
 
 ## Host facts used here (see `/projects/unraid-ops/host-facts.md` for the full set)
 
-Unraid 7.3.1, Docker 29.5.2 CLI on host (this container's own docker CLI is 20.10 and lacks
-advanced `--network` syntax — every live docker test here went through
-`ssh root@192.168.0.10` or the host-socket `docker run --rm -v /usr/bin/docker:...` wrapper,
-never this container's own `docker`). No python3 on host; PHP 8.4 is. webGui HTTPS (port 443,
-localhost-only) did not accept a plain TLS handshake over SSH+curl during this build
-(`SSL routines::wrong version number` — unexplored further, out of scope; see "Not verified in
-a real browser" above) — live page-HTML verification (SPEC.md C.1/C.2) was not completed for
-that reason, beyond confirming the plugin installed and its files landed correctly.
+Unraid 7.3.4 (`/boot/changes.txt`), Docker 29.8.2 daemon on the host; checked 2026-11-04. This container's
+own docker CLI is now 29.9.2 (it was 20.10 during the build, which is why every live docker test then went
+through `ssh root@192.168.0.10`); syntax-sensitive docker commands still run on the host, per the
+`unraid-live-host-testing` skill. No python3 on the host; PHP 8.4 is. The webGui's :443 is loopback-only
+(`USE_SSL="no"`, see "Code review"); pages are verified over :81 in headless Chromium (see "Browser
+verification"). The build-time note about a failed TLS handshake on :443 is in `docs/history.md`.
 
 ## Non-negotiable constraints
 
-Each of these looks like a bug, an omission or an easy tidy-up, and is none of those. The
-narrative reasoning is in the section named after each — read it before changing any of them.
+Each of these looks like a bug, an omission or an easy tidy-up, and is none of those. The reasoning is
+in the skill or `docs/history.md` section named after each. Read it before changing any of them.
 
 1. **No CSRF check in `plugin/include/api.php`.** webGui's `local_prepend.php` already enforces
-   it and *consumes* the token; a second check would 403 every legitimate request. ("CSRF")
+   it and *consumes* the token; a second check would 403 every legitimate request. ("CSRF" above;
+   `unraid-webgui-plugin-pages`)
 2. **Any caller of `include/api.php` that is not jQuery must send the token itself** — the
    `dnmPost()` helper in `DockerNetManInject.page`, both as `X-CSRF-Token` and as a body field.
-   Unraid's `$.ajaxPrefilter` never touches a plain `XMLHttpRequest`. ("CSRF")
-3. **Plugin buttons use `width: fit-content !important`** in `DockerNetManInject.page` and
-   `DockerNetMan.page`. `width: auto` was measured live and does not work here. ("0.3.0
-   real-browser fixes")
+   Unraid's `$.ajaxPrefilter` never touches a plain `XMLHttpRequest`. ("CSRF" above)
+3. **Plugin buttons use `width: fit-content !important`** (plus a `min-width`) in
+   `DockerNetManInject.page` and `DockerNetMan.page`. `width: auto` was measured live and does not
+   work here; `display: inline-block !important` on top of it made no difference either.
+   (`docs/history.md` "0.3.0 real-browser fixes")
 4. **No md5 sidecar or custom md5 re-check in `docker.netman.plg`.** The plugin manager verifies
    the `.txz`'s own `<MD5>`; the sidecar could never be rewritten and broke upgrades.
-   ("Plugin manager quirk")
+   (`docs/history.md` "Plugin manager quirk"; `unraid-plugin-packaging`)
 5. **`netman_write_template_field()` edits raw template text, not a re-serialized
    `SimpleXMLElement`** (`plugin/include/netman.php`) — so no other element in the user's
    template can drift. ("Serialization design")
@@ -397,8 +236,10 @@ narrative reasoning is in the section named after each — read it before changi
    (`maxHeight:80`). Repo docs go in the repo README; they are not the plugin's description.
 7. **`rowsEqual(a, null)` returns `true` ("unknown — trust what was parsed"), and the injector
    passes `null`, never `[]`** (`plugin/docker-netman-core.js`, `DockerNetManInject.page`). `[]`
-   means "expected nothing" and would mark every existing row manually-managed. ("0.3.0
-   real-browser fixes")
+   means "expected nothing" and would mark every existing row manually-managed. The PHP twin
+   `netman_rows_equal(array $a, array $b)` is strictly typed and never sees `null`:
+   `netman_state_get()` returns `[]` when there is no record. `tests/js.test.js` covers
+   `expected=null` on both paths. (`docs/history.md` "0.3.0 real-browser fixes")
 
 Inherited from `unraid-ops`, and applying here too:
 
@@ -411,8 +252,8 @@ never trust a log line or exit code alone.
 
 **Forge (changed 2 Nov 2026): Gitea is primary, GitHub is a read-only push mirror.** Develop against
 `https://git.kiztigs.com/kmbrimble/unraid-docker-netman` (`origin`, gt credential helper; `gt`, not `gh`, for issues/PRs).
-`github.com/kmbrimble/unraid-docker-netman` receives every push to Gitea within about a minute (`sync_on_commit`, plus an
-8-hourly sweep) and **must never be pushed to directly**: the mirror force-syncs and prunes refs, so anything that exists only
+`github.com/kmbrimble/unraid-docker-netman` receives every push to Gitea within about a minute (`sync_on_commit`, plus a
+10-minute sweep: push mirror `interval: 10m0s`, checked via the Gitea API 2026-11-04) and **must never be pushed to directly**: the mirror force-syncs and prunes refs, so anything that exists only
 on GitHub is lost. GitHub has Issues, Wiki, Projects, Discussions and PRs switched off. The `.plg` URLs
 (`raw.githubusercontent.com/.../main/docker.netman.plg` and the release assets) deliberately still point at GitHub.
 `main` is protected on Gitea: changes go through a PR, both CI checks (`CI / php84 (pull_request)`, `CI / php81 (pull_request)`)
@@ -428,14 +269,14 @@ mirror would discard it), so the md5 goes in *before* tagging:
    `.md5` attached. See the `forge-release` skill. That workflow can also be dispatched by hand on GitHub as a dry run.
 
 The CHANGES entry stays by hand and is used verbatim as the release notes. The first real release on this layout is the final
-proof of the tag path; it had not happened when this section was written.
+proof of the tag path; as of 2026-11-04 it still has not happened (latest tag `v0.3.9`, cut before the migration).
 
 `dist/` is still gitignored — artifacts are release assets, not repo contents.
-`scripts/build-plugin.sh` still runs locally for a test build, but needs `xz`, which the
-claude-code container does not have and the runners do.
+`scripts/build-plugin.sh` can run locally for a test build (it needs `xz`, which the claude-code container
+now has), but `&md5;` still comes from CI, never a local build.
 
-Gitea CI (`.gitea/workflows/ci.yml`) runs `php -l`, `php tests/run.php` and `node tests/js.test.js` on PHP 8.4 and the PHP
-tests on 8.1 on every push and PR. The GitHub release workflow repeats those checks rather than trusting a result it cannot see.
+Gitea CI runs on every push and PR; what it runs is under "Test command". The GitHub release workflow repeats
+those checks rather than trusting a result it cannot see. The GitHub release workflow repeats those checks rather than trusting a result it cannot see.
 
 **Installing on the host is the one step CI cannot do** — GitHub's runners (and the Gitea runner VM) have no route to
 192.168.0.10. `scripts/install-on-host.sh` does it from the claude-code container, and running it
@@ -492,13 +333,13 @@ repo implements X" for any of these is wrong:
 - **`unraid-secretsman`**, a sibling plugin, live-patches that same `xmlToCommand()` in
   `/usr/local/emhttp/plugins/dynamix.docker.manager/include/Helpers.php` on this host.
 - **The Unraid plugin manager** verifies the `.txz` against the `<MD5>` in the `.plg` — see
-  "Plugin manager quirk" for why re-checking it here was actively wrong.
+  constraint 4 and `docs/history.md` "Plugin manager quirk" for why re-checking it here was actively wrong.
 - **`window.csrf_token`** (declared by webGui's `HeadInlineJS.php`) and Unraid's global
   `$.ajaxPrefilter`, which is why `DockerNetMan.page`'s jQuery calls need no token handling.
 - **The host's `docker` CLI and daemon** — every function in `plugin/include/docker.php` shells
   out to them.
 
-**Test reality.** `tests/run.php` (42 checks) and `tests/js.test.js` (23) each `require`
+**Test reality.** `tests/run.php` (69 checks as of 2026-11-04) and `tests/js.test.js` (23) each `require`
 exactly one file: `plugin/include/netman.php` and `plugin/docker-netman-core.js`. Well covered
 there: parse and serialize round-trips on both the ExtraParams and PostArgs paths, idempotence,
 `manually_managed` drift detection, the `expected=null` regression, `netman_ip_in_subnet`,
@@ -512,8 +353,8 @@ Untested — **no test loads these files at all**:
 - `netman_state_load/save/get/set`, `netman_read_template`, `netman_list_templates` — they live
   in the tested file but no test calls them.
 - `DockerNetMan.page` and `DockerNetManInject.page` (~590 lines of PHP/JS). No harness exists,
-  and every bug ever found in them was found by the owner in a real browser — see "0.3.0
-  real-browser fixes".
+  and every bug ever found in them was found by the owner in a real browser — see `docs/history.md`
+  "0.3.0 real-browser fixes".
 
 **A change to `api.php`, `docker.php` or either `.page` has no test that can exercise it.** Treat
 that as the strongest defect signal available in this repo, and say plainly that only a live
