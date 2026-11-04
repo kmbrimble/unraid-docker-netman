@@ -384,20 +384,20 @@ repo implements X" for any of these is wrong:
 - **The host's `docker` CLI and daemon** — every function in `plugin/include/docker.php` shells
   out to them.
 
-**Test reality.** `tests/run.php` (69 checks as of 2026-11-04) and `tests/js.test.js` (23) each `require`
-exactly one file: `plugin/include/netman.php` and `plugin/docker-netman-core.js`. Well covered
+**Test reality.** `tests/run.php` and `tests/js.test.js` each `require` exactly one file:
+`plugin/include/netman.php` and `plugin/docker-netman-core.js`. Well covered
 there: parse and serialize round-trips on both the ExtraParams and PostArgs paths, idempotence,
 `manually_managed` drift detection, the `expected=null` regression, `netman_ip_in_subnet`,
 `netman_choose_path`, and `netman_write_template_field` against a temp XML file.
 
 Untested — **no test loads these files at all**:
 
-- `plugin/include/api.php`. All eight actions, `save` (the template write) and `apply` (live
+- `plugin/include/api.php`. Every action, `save` (the template write) and `apply` (live
   `docker network connect`/`disconnect`) included.
 - `plugin/include/docker.php`. Every function shells out to `docker`.
 - `netman_state_load/save/get/set`, `netman_read_template`, `netman_list_templates` — they live
   in the tested file but no test calls them.
-- `DockerNetMan.page` and `DockerNetManInject.page` (~590 lines of PHP/JS). No harness exists,
+- `DockerNetMan.page` and `DockerNetManInject.page`. No harness exists,
   and every bug ever found in them was found by the owner in a real browser — see `docs/history.md`
   "0.3.0 real-browser fixes".
 
