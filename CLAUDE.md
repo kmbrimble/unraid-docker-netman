@@ -172,7 +172,8 @@ Unraid 7.4.0-rc.2 adds a native control to the Add/Update Container form. Source
   the start-after-create paths. In `update_container` a failure only logs "Could not connect one or
   more additional networks"; it does not abort. (Same `docker network connect --ip` outside the
   network's subnet exits 1: `invalid endpoint settings: no configured subnet contains IP address`.)
-- **Verified vs inferred.** Verified: the source diff; the library and API summary logic (`tests/run.php`);
+- **Verified vs inferred.** Verified: the source diff; the library functions behind the summary and save paths
+  (`tests/run.php`; `api.php` itself is loaded by no test);
   the injector script against an rc2-shaped fixture in real headless Chromium
   (`tests/inject-browser.test.js`, skips without playwright-core); the duplicate-connect behaviour above.
   **Inferred, not observed:** how Unraid's markdown renders the row (assumed `dl > dt + dd(select +
@@ -221,6 +222,11 @@ flag when crossing a boundary is intended. Keep components single-digit, or zero
 the claude-code container (PHP 8.4 CLI is on PATH; earlier notes said to run PHP over SSH on the host,
 which is no longer needed). Gitea CI (`.gitea/workflows/ci.yml`) runs `php -l`, `scripts/check-plg.php`
 and all three on PHP 8.4 (job `php84`), and `php -l`, the plg check and the PHP tests on 8.1 (job `php81`).
+
+`node tests/inject-browser.test.js` is a fourth, local-only check: it drives the injector in real headless
+Chromium against Add/Update-Container fixtures (see the Unraid 7.4 section). It needs `playwright-core` and a
+cached `chrome-headless-shell` (`NODE_PATH=<dir with node_modules> node tests/inject-browser.test.js`), exits 0
+with `SKIP:` when either is missing, and is not run by CI.
 
 ## Plugin manager quirk
 
@@ -390,17 +396,26 @@ there: parse and serialize round-trips on both the ExtraParams and PostArgs path
 `manually_managed` drift detection, the `expected=null` regression, `netman_ip_in_subnet`,
 `netman_choose_path`, and `netman_write_template_field` against a temp XML file.
 
-Untested — **no test loads these files at all**:
+Not loaded by any test:
 
 - `plugin/include/api.php`. Every action, `save` (the template write) and `apply` (live
-  `docker network connect`/`disconnect`) included.
+  `docker network connect`/`disconnect`) included. `tests/inject-browser.test.js` stubs the
+  endpoint URL and never runs this file.
 - `plugin/include/docker.php`. Every function shells out to `docker`.
 - `netman_state_load/save/get/set`, `netman_read_template`, `netman_list_templates` — they live
   in the tested file but no test calls them.
-- `DockerNetMan.page` and `DockerNetManInject.page`. No harness exists,
-  and every bug ever found in them was found by the owner in a real browser — see `docs/history.md`
+
+Only sandbox and fixture coverage, nothing that checks what is rendered:
+
+- `DockerNetMan.page` and `DockerNetManInject.page`. `tests/globals.test.js` runs each page's script in
+  a vm sandbox against a mocked jQuery (does it run, does it leak globals, and for the Settings page the
+  adopt post sequence). `tests/inject-browser.test.js` drives the injector in real headless Chromium
+  against Add/Update-Container fixtures (rc2's native row, and 7.3.x without it); it skips when
+  `playwright-core` or a cached `chrome-headless-shell` is missing, and CI does not run it. Every bug ever
+  found in them was found by the owner in a real browser — see `docs/history.md`
   "0.3.0 real-browser fixes".
 
-**A change to `api.php`, `docker.php` or either `.page` has no test that can exercise it.** Treat
-that as the strongest defect signal available in this repo, and say plainly that only a live
-browser or host check can confirm such a change.
+**A change to `api.php` or `docker.php` has no test that can exercise it, and a change to either
+`.page` has only the sandbox and fixture checks above.** Treat that as the strongest defect signal
+available in this repo, and say plainly that only a live browser or host check can confirm such a
+change.
