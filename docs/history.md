@@ -290,3 +290,14 @@ localhost-only) did not accept a plain TLS handshake over SSH+curl during this b
 (`SSL routines::wrong version number` — unexplored further, out of scope; see "Not verified in
 a real browser" above) — live page-HTML verification (SPEC.md C.1/C.2) was not completed for
 that reason, beyond confirming the plugin installed and its files landed correctly.
+
+
+## The stock-styled settings page, 0.3.6-0.3.9 (replaced by the web app in 0.4.0)
+
+`DockerNetMan.page` was a `Menu="Utilities"` page at `/Settings/DockerNetMan`, 430 lines of PHP + jQuery in stock
+styling: Unassigned Devices' `.title` bars with `.right` controls, `orb` dots and `jquery.switchbutton` toggles,
+`swal()` for results and the Adopt confirm, inline `onclick` handlers exposed as 13 `window.dnm*` names (hence the
+0.3.9 strict-closure and `tests/globals.test.js` hygiene work), and `width: fit-content !important` on every
+button (constraint 3). 0.4.0 replaced it with the Preact app in `ui/` behind a top-bar tab (`Menu="Tasks:92"`),
+sharing SecretsMan 1.1.x's architecture. Behaviour that was kept on purpose is listed in CLAUDE.md "Web app (0.4.0)";
+the one change is that Apply all now asks first.

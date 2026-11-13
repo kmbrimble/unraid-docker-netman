@@ -47,12 +47,14 @@ than risk clobbering something you wrote.
 
 ## Using it
 
-- **Settings → Docker NetMan** (also reachable via a small **Docker NetMan** button next to Add
-  Container/Start All on the Docker page): manage `docker network` (list/create/delete), and a
-  table of every container template with its additional networks editable inline. **Save**
-  rewrites the template; **Apply now** reconciles the running container's live network
-  membership (`docker network connect`/`disconnect`) without recreating it — the automated
-  version of the manual step this plugin exists to replace.
+- **NetMan** (its own tab in the top bar, right after SecretsMan; also reachable via a small **Docker
+  NetMan** button next to Add Container/Start All on the Docker page, and as a full page at `/DockerNetMan`
+  via "Open full page"): the web app. A Containers card lists every container with its primary network, additional
+  networks and a sync chip; **Edit** opens that container's networks inline. **Save** rewrites the template;
+  **Apply now** reconciles the running container's live network membership (`docker network connect`/`disconnect`)
+  without recreating it — the automated version of the manual step this plugin exists to replace; **Apply all**
+  does that for every container in drift, after asking. **Adopt** takes over a network block you wrote by hand.
+  A Networks card lists, creates and deletes `docker network`s. Light, dark or auto theme; search; Expand/Collapse all.
 - **Add/Update Container** form: an "Additional networks" section appears directly below the
   Fixed MAC address row, so you can set them up at the same time as everything else, before
   ever hitting Apply.

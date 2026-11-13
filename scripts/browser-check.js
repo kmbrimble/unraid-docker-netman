@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Loads Unraid pages in headless Chromium and reports load time, page errors, console
 // errors and leaked globals. Read-only: it only navigates. Not shipped in the txz.
-// Usage: NODE_PATH=<dir with node_modules/playwright-core> node scripts/browser-check.js /Main /Docker /Settings/DockerNetMan
+// Usage: NODE_PATH=<dir with node_modules/playwright-core> node scripts/browser-check.js /Main /Docker /DockerNetMan
 // Env: UNRAID_HOST (default 192.168.0.10), UNRAID_SSH_KEY (default /root/.ssh/unraid_secretsman).
 // Auth: reuses the newest active root PHP session on the host as cookie unraid_<md5(host)>
 // (host WITHOUT port — local_prepend.php's session_name). The session id is never printed.

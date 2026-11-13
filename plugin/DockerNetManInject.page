@@ -36,17 +36,10 @@ Markdown="false"
   //  - Add/Update Container: inject the "Additional networks" section
   //    into the form itself.
   //  - Anywhere else under /Docker (the container list): inject a single
-  //    button that links to the plugin's own page (Settings/DockerNetMan).
-  //    The full networks/containers UI used to live on a Menu="Docker:3"
-  //    page, on the theory that it would render as its own tab — it
-  //    doesn't: DockerContainers.page (Menu="Docker:1") sets Tabs="false",
-  //    and MainContentTabless.php's rule for an untabbed menu group is to
-  //    concatenate every page in it in sequence onto one page, not render
-  //    separate tabs. That put the whole Networks UI inline underneath
-  //    the container list. Moved to its own Menu="Utilities" page instead
-  //    (matching unraid-secretsman's SecretsMan.page precedent — reachable
-  //    at Settings/DockerNetMan) and this button is the only thing that now
-  //    appears on /Docker itself.
+  //    button that links to the plugin's own page (the NetMan top-bar tab, /DockerNetMan).
+  //    The full networks/containers UI lives on its own Menu="Tasks:92" page (DockerNetMan.page, an iframe host
+    //    for the Preact app in ui/); a Menu="Docker:N" page would be concatenated under the container list instead
+    //    of getting a tab (history: docs/history.md). This button is the only thing added to /Docker itself.
   var onForm = /^\/Docker\/(AddContainer|UpdateContainer)/.test(location.pathname);
   var onDockerList = !onForm && /^\/Docker(\/|$)/.test(location.pathname);
   if (!onForm && !onDockerList) return;
@@ -60,7 +53,7 @@ Markdown="false"
       btn.id = 'dnm-open-netman';
       btn.value = 'Docker NetMan';
       btn.title = 'Manage additional Docker networks (Docker NetMan)';
-      btn.onclick = function () { location.href = '/Settings/DockerNetMan'; };
+      btn.onclick = function () { location.href = '/DockerNetMan'; };
       actions.appendChild(btn);
     }
     if (document.readyState === 'loading') {

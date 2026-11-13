@@ -232,6 +232,81 @@ $ex2 = '--network br0 --network name=proxynet,ip=172.18.0.9';
 checkEquals('adopt extra exact: state_only', 'state_only', netman_adopt('Grafana', 'br0', $ex2, '/nonexistent', [], true)['mode']);
 check('adopt extra refuses unknown --network form', !netman_adopt('Grafana', 'br0', '--network br0 --network=proxynet', '/nonexistent', [], true)['ok']);
 
+// ---- UI build + package layout + app shell -------------------------------------
+$skips = 0;
+function skip(string $name, string $why): void
+{
+    global $skips;
+    $skips++;
+    echo "SKIPPED: $name ($why)\n";
+}
+
+/** Build ui/ once per run and point build-plugin.sh at it (NETMAN_UI_DIST), so the several package builds below do not each run npm. */
+function ui_dist_for_tests(): ?string
+{
+    static $dist = false;
+    if ($dist !== false) {
+        return $dist;
+    }
+    $ui = __DIR__ . '/../ui';
+    exec('command -v npm >/dev/null 2>&1', $o, $have);
+    if ($have !== 0) {
+        return $dist = null;
+    }
+    exec('cd ' . escapeshellarg($ui) . ' && npm ci --no-audit --no-fund --loglevel=error 2>&1 && npm run build 2>&1', $out, $code);
+    if ($code !== 0) {
+        echo implode("\n", array_slice($out, -15)), "\n";
+        check('ui: npm ci && npm run build succeeds', false);
+        return $dist = null;
+    }
+    putenv('NETMAN_UI_DIST=' . realpath($ui . '/dist'));
+    return $dist = realpath($ui . '/dist');
+}
+
+$page = (string) file_get_contents(__DIR__ . '/../plugin/DockerNetMan.page');
+check('page: is the top-bar tab right after SecretsMan (Tasks:92)', str_starts_with($page, 'Menu="Tasks:92"'));
+check('page: tab title is NetMan', (bool) preg_match('/^Title="NetMan"$/m', $page));
+check('page: is no longer under Settings > Utilities', !str_contains($page, 'Utilities'));
+check('page: is a thin iframe host for the app (no api.php, no ajax of its own)', str_contains($page, '/plugins/docker.netman/app/index.php') && !str_contains($page, 'api.php') && !str_contains($page, '$.post'));
+check('page: offers "Open full page"', str_contains($page, 'Open full page'));
+check('page: is far smaller than the old 430-line page', substr_count($page, "\n") < 60);
+
+// app/index.php, as php-fpm would run it (GET): token escaped, theme from the Unraid setting, assets versioned.
+$shellTmp = sys_get_temp_dir() . '/netman-shell-' . bin2hex(random_bytes(4));
+mkdir($shellTmp);
+file_put_contents("$shellTmp/var.ini", "csrf_token=\"ab<\\\"'cd\"\n");
+file_put_contents("$shellTmp/dynamix.cfg", "[display]\ntheme=\"black\"\n");
+$shell = shell_exec('NETMAN_VAR_INI=' . escapeshellarg("$shellTmp/var.ini") . ' NETMAN_DYNAMIX_CFG=' . escapeshellarg("$shellTmp/dynamix.cfg") . ' php ' . escapeshellarg(__DIR__ . '/../plugin/app/index.php'));
+check('shell: dark Unraid theme gives data-theme="dark" and data-server-theme', str_contains((string) $shell, 'data-theme="dark" data-server-theme="dark"'));
+check('shell: the token is HTML-escaped into data-csrf', str_contains((string) $shell, 'data-csrf="ab&lt;\\&quot;&#039;cd"') || str_contains((string) $shell, 'data-csrf="ab&lt;'));
+check('shell: no raw token characters leak into markup', !str_contains((string) $shell, 'ab<'));
+check('shell: loads the shared core before the module', (bool) preg_match('~docker-netman-core\.js"></script>\s*<script type="module" src="assets/app\.js~', (string) $shell));
+check('shell: stored theme is applied before the stylesheet (key netman-theme)', preg_match('~netman-theme.*<link rel="stylesheet"~s', (string) $shell) === 1);
+file_put_contents("$shellTmp/dynamix.cfg", "[display]\ntheme=\"white\"\n");
+$shell = shell_exec('NETMAN_VAR_INI=' . escapeshellarg("$shellTmp/none.ini") . ' NETMAN_DYNAMIX_CFG=' . escapeshellarg("$shellTmp/dynamix.cfg") . ' php ' . escapeshellarg(__DIR__ . '/../plugin/app/index.php'));
+check('shell: light theme, and a missing var.ini degrades to an empty token (no fatal)', str_contains((string) $shell, 'data-theme="light"') && str_contains((string) $shell, 'data-csrf=""'));
+array_map('unlink', glob("$shellTmp/*"));
+rmdir($shellTmp);
+
+if (ui_dist_for_tests() === null) {
+    skip('plg: packaged .txz layout', 'npm not installed');
+} else {
+    $lroot = realpath(__DIR__ . '/..');
+    exec('bash ' . escapeshellarg("$lroot/scripts/build-plugin.sh") . ' layout-test 2>&1', $bo, $bc);
+    check('package: build succeeds', $bc === 0);
+    $listing = [];
+    exec('tar -tJf ' . escapeshellarg("$lroot/dist/docker.netman-layout-test.txz"), $listing);
+    $base = 'usr/local/emhttp/plugins/docker.netman/';
+    foreach (['DockerNetMan.page', 'DockerNetManInject.page', 'README.md', 'docker-netman-core.js', 'app/index.php', 'app/assets/app.js',
+              'app/assets/app.css', 'include/api.php', 'include/netman.php', 'include/docker.php'] as $f) {
+        check("package: contains $f at the install root", in_array($base . $f, $listing, true));
+    }
+    check('package: no UI sources, node_modules or sourcemaps ship', count(preg_grep('~(/ui/|node_modules|\.map$|\.tsx?$)~', $listing)) === 0);
+    check('package: every path is under the install root', count(array_filter($listing, fn($l) => !str_starts_with($l, 'usr/local/emhttp/plugins/docker.netman') && !in_array($l, ['usr/', 'usr/local/', 'usr/local/emhttp/', 'usr/local/emhttp/plugins/'], true))) === 0);
+    @unlink("$lroot/dist/docker.netman-layout-test.txz");
+    @unlink("$lroot/dist/docker.netman.md5");
+}
+
 // ---- reproducible build ------------------------------------------------
 // The .plg's &md5; is committed before the tag and the GitHub release workflow rebuilds and requires it to match,
 // so the .txz must not depend on the machine. xz >= 5.6 compresses multi-threaded by default (sizes go into the
@@ -256,7 +331,9 @@ foreach ([
 @unlink("$root/dist/docker.netman.md5");
 check('build is byte-reproducible across umask, TZ and XZ_DEFAULTS: ' . json_encode($md5s), count(array_unique($md5s)) === 1);
 
+require __DIR__ . '/web_tests.inc.php';
+
 // ---- summary ---------------------------------------------------------
 
-echo "\n$count checks, $failures failures\n";
+echo "\n$count checks, $failures failures, $skips skipped\n";
 exit($failures === 0 ? 0 : 1);

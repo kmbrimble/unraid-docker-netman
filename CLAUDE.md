@@ -61,11 +61,14 @@ the `Menu="Buttons"` injector vehicle, capture-phase submit listener, fail soft,
 strict-mode IIFE): see the `unraid-webgui-plugin-pages` skill, "Page registration". The 0.1.0–0.3.1
 narrative (the `Docker:3` attempt, the screenshot) is in `docs/history.md`.
 
-- `DockerNetMan.page`: `Menu="Utilities"`, `Title="Docker NetMan"`, at `/Settings/DockerNetMan` (the
-  same convention as `unraid-secretsman`'s `SecretsMan.page`). It is the whole UI.
+- `DockerNetMan.page`: `Menu="Tasks:92"`, `Title="NetMan"`, `Code="e911"` (the stock `icon-network` glyph), at
+  `/DockerNetMan`: its own top-bar tab, directly after SecretsMan (`Tasks:91`; nothing else sits at 92 on this
+  host: Tasks are 1 Dashboard/Main, 2 Shares, 4 Settings, 50 Plugins, 60 Docker, 70 VMs, 80 Apps, 90 Tools). Since 0.4.0
+  it is only a thin iframe host plus "Open full page", exactly like `SecretsMan.page`; the UI is the Preact app in
+  `ui/` (see "Web app (0.4.0)"). Before 0.4.0 it was a `Menu="Utilities"` page at `/Settings/DockerNetMan`.
 - `DockerNetManInject.page`: `Menu="Buttons:5"`, `Link="nav-user"`, `Markdown="false"`, a pure `<script>`.
   - On `^/Docker` (excluding the Add/Update Container paths) it appends one button into `.js-actions`,
-    next to the stock Add Container button, linking to `/Settings/DockerNetMan`.
+    next to the stock Add Container button, linking to `/DockerNetMan`.
   - On `^/Docker/(AddContainer|UpdateContainer)` it finds `input[name=contMyMAC]`, walks up to its row
     container and inserts a matching sibling row below it (`insertBlock()`: `closest('dl')`, then
     `closest('div')`; unchanged since 0.1.0, confirmed correct in the owner's real browser at 0.3.1).
@@ -81,31 +84,53 @@ Mechanism, failure shape (200 with an empty body) and the no-plugin-side-check r
 `unraid-webgui-plugin-pages` skill, "Requests: transport and CSRF". Repo specifics (constraints 1–2):
 
 - `include/api.php` has no CSRF check of its own, deliberately.
-- `DockerNetMan.page` uses jQuery `$.post`, so Unraid's `$.ajaxPrefilter` adds the token.
+- The web app (`ui/src/lib.ts` `postRaw`/`postJson`) is plain `fetch`, so it sends the token itself: as a body field and as
+  `X-CSRF-Token`, urlencoded only (never multipart), with the token read from `var.ini` by `app/index.php` (`data-csrf`).
 - `DockerNetManInject.page` uses plain `XMLHttpRequest`, so its shared `dnmPost()` helper reads
   `window.csrf_token` and sends it **both** as `X-CSRF-Token` and as a `csrf_token` body field
   (`local_prepend.php` reads `$_POST['csrf_token'] ?? $_SERVER['HTTP_X_CSRF_TOKEN']`). Without it,
   `fetchNetworks()` saw the empty body and the injector reported "endpoint unreachable".
-- **Any future page here that talks to `include/api.php` outside jQuery needs the same treatment.**
+- **Any future page here that talks to `include/api.php` outside jQuery needs the same treatment** (the app and the injector both do).
 
 The live curl proof (same session, with and without the token) is in `docs/history.md`.
 
-## Settings page (0.3.6 redesign) and Adopt (0.3.8)
+## Web app (0.4.0) and Adopt (0.3.8)
 
-- `DockerNetMan.page` follows Unassigned Devices: stock `.title` bars with `.right` controls,
-  `orb` dots, `jquery.switchbutton`. Containers first (one line each, cog opens one inline editor
-  at a time), Networks second (member count expands). Driven by `docker ps -a` joined to templates
-  by exact `<Name>` (`netman_join_containers`); "Previous Apps" templates only with
-  `include_previous=1`; containers with no template are listed read-only. Order is
-  case-insensitive (`netman_name_cmp`), server-side — the client keeps the server's order.
-  Toggle state lives in localStorage.
+- **Architecture = SecretsMan 1.1.x's.** `plugin/app/index.php` is the shell the webGUI serves at
+  `plugins/docker.netman/app/index.php` (lowercase path: an uppercase first letter routes to `template.php`). It emits
+  only `csrf_token` from `var.ini` (escaped, `no-store`), derives `data-theme` from the Unraid theme (black/gray dark,
+  white/azure light), applies a stored light/dark choice in an inline script before the stylesheet, loads
+  `../docker-netman-core.js` (so the editor's fragment preview uses the same builder as the injector, not a third
+  copy) and the content-versioned `assets/app.js|css`. Env overrides `NETMAN_VAR_INI` / `NETMAN_DYNAMIX_CFG` are for tests.
+- `ui/` is Preact + Vite + TypeScript (`npm test` = vitest, `npm run check:contrast`, `npm run build`). Output names
+  are fixed (`assets/app.js`, `assets/app.css`, no sourcemaps) so the archive stays reproducible; CI pins Node
+  `22.23.4`; `NETMAN_UI_DIST` points `build-plugin.sh` at a prebuilt dist (`tests/run.php` builds it once).
+- UI behaviour: Containers card first (one line each, "Edit" opens one inline editor at a time), Networks card second
+  (member count expands; trash icon, reserved networks have none). Header: theme switch (`auto|light|dark`, localStorage
+  key `netman-theme`, shared by the iframe and standalone page), search (re-opens collapsed cards), Expand/Collapse all.
+  The two toggles keep their old keys `dnm.showPrev` / `dnm.onlyExtra` (`'1'`/`'0'`). Apply all asks first (it is
+  the only intentional behaviour change from the old page). All dialogs are in-app modals (no `swal`/`confirm`).
+- **`normalizeRows()` (`ui/src/lib.ts`) is the `save` payload shape** (trimmed, empty optionals `null`, blank-network
+  rows dropped). The server compares what it parses back against `state.json`; a different shape could flip a
+  container to "manually managed". Tested; do not loosen it.
+- `syncState()` keeps the old page's precedence: no template, previous, native overlap, stopped, manual, then sync/drift.
+- **The app renders `native_networks` / `native_overlap` when the server sends them** (both optional). Main's server
+  does not (that is the unreleased `feature/native-extranetworks` work), so on main that code path is inert and covered
+  only by a fixture test (`App.test.tsx`), never observed live.
+- UI follows DESIGN.md. No colour, spacing, radius or shadow values outside the vendored `ui/src/styles/tokens.css`;
+  changes go upstream to kmbrimble/design-system and are re-vendored. `ui/src/styles/*.css` are vendored from
+  design-system `b6c9faf` (headers say so); `npm run check:contrast` checks the pairs.
+- Namespace-style names (container and network names) display in their real case; sorting is case-insensitive
+  (`netman_name_cmp` server-side, `compareNames` for the networks list).
+- Still true from 0.3.6: driven by `docker ps -a` joined to templates by exact `<Name>` (`netman_join_containers`);
+  "Previous Apps" templates only with `include_previous=1`; containers with no template are listed read-only.
 - **Adopt** (`netman_adopt`, API `adopt`, `dry_run=1` reports the plan): records a hand-written
   block in state.json. Exact canonical match → state only, template untouched; otherwise only
   that path's field (PostArgs or ExtraParams, never the other) is normalised, after a confirm
   showing before/after. Refuses when any network token is not accounted for by a parsed row.
   Never pins live IPs: the editor only offers them as a one-click fill.
 - The docker.networks (mstrhakr) plugin was checked for and is **not installed** on this host.
-- The owner's 0.3.7 real-browser measurements of this page are in `docs/history.md`.
+- The old stock-styled page (0.3.6-0.3.9) and the owner's 0.3.7 real-browser measurements of it are in `docs/history.md`.
 
 ## Real-browser fixes (0.3.0–0.3.1)
 
@@ -128,7 +153,7 @@ a real browser". Here:
 
 - `scripts/browser-check.js` wraps it (repo only; `build-plugin.sh` packages `plugin/` alone, so it never
   reaches the txz):
-  `NODE_PATH=<scratch>/node_modules node scripts/browser-check.js /Main /Docker /Settings/DockerNetMan`.
+  `NODE_PATH=<scratch>/node_modules node scripts/browser-check.js /Main /Docker /DockerNetMan`.
   It reports load time, pageerrors, console errors, `typeof window.before` and leaked globals.
 - Session: the newest `/var/lib/php/sess_*` containing `unraid_user|s:4:"root"`, as cookie `unraid_` +
   md5(`192.168.0.10`).
@@ -172,10 +197,13 @@ flag when crossing a boundary is intended. Keep components single-digit, or zero
 
 ## Test command
 
-`php tests/run.php` (no framework), `node tests/js.test.js` and `node tests/globals.test.js`. All three run locally in
-the claude-code container (PHP 8.4 CLI is on PATH; earlier notes said to run PHP over SSH on the host,
-which is no longer needed). Gitea CI (`.gitea/workflows/ci.yml`) runs `php -l`, `scripts/check-plg.php`
-and all three on PHP 8.4 (job `php84`), and `php -l`, the plg check and the PHP tests on 8.1 (job `php81`).
+`php tests/run.php` (builds the UI and the package; includes the `web:` subprocess tests of `api.php` via
+`tests/web_tests.inc.php`, a fake `docker` on PATH and `NETMAN_STATE_PATH` / `NETMAN_TEMPLATES_DIR` overrides),
+`node tests/js.test.js`, `node tests/globals.test.js`, and in `ui/`: `npm test` (vitest), `npm run check:contrast`,
+`npm run build`. All run locally in the claude-code container (PHP 8.4 CLI is on PATH; Node 22). Gitea CI
+(`.gitea/workflows/ci.yml`) runs `php -l`, `scripts/check-plg.php`, the UI steps and all of the above on PHP 8.4 (job
+`php84`), and `php -l`, the plg check and the PHP tests on 8.1 (job `php81`, which still needs Node because the PHP
+tests build the UI). `tests/run.php` prints a `skipped` count; a skip only happens when `npm` is missing and CI has it.
 
 ## Plugin manager quirk
 
@@ -217,9 +245,10 @@ in the skill or `docs/history.md` section named after each. Read it before chang
 2. **Any caller of `include/api.php` that is not jQuery must send the token itself** — the
    `dnmPost()` helper in `DockerNetManInject.page`, both as `X-CSRF-Token` and as a body field.
    Unraid's `$.ajaxPrefilter` never touches a plain `XMLHttpRequest`. ("CSRF" above)
-3. **Plugin buttons use `width: fit-content !important`** (plus a `min-width`) in
-   `DockerNetManInject.page` and `DockerNetMan.page`. `width: auto` was measured live and does not
-   work here; `display: inline-block !important` on top of it made no difference either.
+3. **Plugin buttons injected into stock pages use `width: fit-content !important`** (plus a `min-width`) in
+   `DockerNetManInject.page`. `width: auto` was measured live and does not work here; `display: inline-block
+   !important` on top of it made no difference either. (The 0.4.0 app lives in an iframe, so stock CSS never
+   reaches it; it uses the design system's `.btn` classes instead.)
    (`docs/history.md` "0.3.0 real-browser fixes")
 4. **No md5 sidecar or custom md5 re-check in `docker.netman.plg`.** The plugin manager verifies
    the `.txz`'s own `<MD5>`; the sidecar could never be rewritten and broke upgrades.
@@ -335,27 +364,28 @@ repo implements X" for any of these is wrong:
 - **The Unraid plugin manager** verifies the `.txz` against the `<MD5>` in the `.plg` — see
   constraint 4 and `docs/history.md` "Plugin manager quirk" for why re-checking it here was actively wrong.
 - **`window.csrf_token`** (declared by webGui's `HeadInlineJS.php`) and Unraid's global
-  `$.ajaxPrefilter`, which is why `DockerNetMan.page`'s jQuery calls need no token handling.
+  `$.ajaxPrefilter` (which only helps jQuery callers; the app sends the token itself, see "CSRF").
 - **The host's `docker` CLI and daemon** — every function in `plugin/include/docker.php` shells
   out to them.
 
-**Test reality.** `tests/run.php` (69 checks as of 2026-11-04) and `tests/js.test.js` (23) each `require`
-exactly one file: `plugin/include/netman.php` and `plugin/docker-netman-core.js`. Well covered
-there: parse and serialize round-trips on both the ExtraParams and PostArgs paths, idempotence,
-`manually_managed` drift detection, the `expected=null` regression, `netman_ip_in_subnet`,
-`netman_choose_path`, and `netman_write_template_field` against a temp XML file.
+**Test reality.** Covered: `tests/run.php` loads `plugin/include/netman.php` (parse/serialize round-trips on both
+paths, idempotence, `manually_managed` drift, the `expected=null` regression, `netman_ip_in_subnet`,
+`netman_choose_path`, `netman_write_template_field` against a temp XML file) and, since 0.4.0, runs **`api.php` itself as
+a real subprocess for every action** (`web:` tests: non-POST and unknown-action rejection, networks, network
+create/delete guards, containers, get, preview, save, manually-managed refusal, adopt dry-run and commit, apply)
+against a fake `docker` and temp state/template paths, plus the `app/index.php` shell and the packaged archive layout.
+`ui/` has vitest checks of the pure logic (`lib.test.ts`) and the whole app against a fake API (`App.test.tsx`).
+`tests/js.test.js` covers `docker-netman-core.js`.
 
-Untested — **no test loads these files at all**:
+Still not covered by any test:
 
-- `plugin/include/api.php`. All eight actions, `save` (the template write) and `apply` (live
-  `docker network connect`/`disconnect`) included.
-- `plugin/include/docker.php`. Every function shells out to `docker`.
-- `netman_state_load/save/get/set`, `netman_read_template`, `netman_list_templates` — they live
-  in the tested file but no test calls them.
-- `DockerNetMan.page` and `DockerNetManInject.page` (~590 lines of PHP/JS). No harness exists,
-  and every bug ever found in them was found by the owner in a real browser — see `docs/history.md`
-  "0.3.0 real-browser fixes".
+- `plugin/include/docker.php` against a **real** docker: the `web:` tests use a fake `docker` script, so argument
+  syntax and real output formats are only proven by live use.
+- `netman_state_load/save` failure modes (disk full, torn write) and `netman_write_template_field`'s non-atomic write.
+- How the rendered app looks and behaves: only a live browser check shows that (see "Browser verification"); vitest
+  runs in jsdom with no layout. `DockerNetManInject.page` has only the vm-sandbox hygiene test.
+  Every injector bug ever found was found by the owner in a real browser: `docs/history.md` "0.3.0 real-browser fixes".
 
-**A change to `api.php`, `docker.php` or either `.page` has no test that can exercise it.** Treat
+**A change to `docker.php` or `DockerNetManInject.page` has no test that can fully exercise it.** Treat
 that as the strongest defect signal available in this repo, and say plainly that only a live
 browser or host check can confirm such a change.

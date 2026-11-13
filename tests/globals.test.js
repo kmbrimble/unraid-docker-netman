@@ -44,10 +44,13 @@ function makeSandbox(posts) {
   $.fn = {};
   $.post = (url, d, cb) => { posts.push(d); cb(reply(d)); return { fail() {} }; };
   const sb = {
-    $, jQuery: $, console, location: { pathname: '/Settings/DockerNetMan' },
+    $, jQuery: $, console, location: { pathname: '/DockerNetMan' },
     swal: (o, cb) => cb && cb(true), confirm: () => true, alert() {},
     localStorage: { getItem: () => null, setItem() {} },
-    document: { readyState: 'complete', querySelector: () => null, getElementById: () => null, querySelectorAll: () => [], addEventListener() {}, createElement: () => chain(), body: chain(), head: chain() },
+    __frame: { style: {}, offsetHeight: 600, getBoundingClientRect: () => ({ top: 120 }) },
+    getComputedStyle: () => ({ position: 'fixed' }), innerHeight: 900, setTimeout: () => 0, addEventListener() {},
+    document: { readyState: 'complete', querySelector: () => null, documentElement: { scrollHeight: 900 },
+      getElementById: (id) => (id === 'dnm-frame' ? sb.__frame : id === 'footer' ? { offsetHeight: 40 } : null), querySelectorAll: () => [], addEventListener() {}, createElement: () => chain(), body: chain(), head: chain() },
     // sentinels: Unraid's own header globals
     before: new Date(), after: 'A', now: new Date(), timers: {}, csrf_token: 'tok', uptime: 1,
   };
@@ -73,22 +76,13 @@ function run(page, pathname, exercise) {
   return { sb, posts, leaked: Object.keys(sb).filter(k => !keysBefore.has(k)) };
 }
 
-// Settings page: only the inline-handler names may be added to window.
-const HANDLERS = ['dnmToggleEdit', 'dnmAddRow', 'dnmRemoveRow', 'dnmRowChanged', 'dnmSave', 'dnmApply', 'dnmAdopt', 'dnmUseIp',
-  'dnmCreateNetwork', 'dnmDeleteNetwork', 'dnmToggleMembers', 'dnmToggleNetForm', 'loadContainers'];
-const r = run('DockerNetMan.page', '/Settings/DockerNetMan', (sb, posts) => {
-  sb.dnmToggleEdit('Grafana');
-  sb.dnmAdopt('Grafana'); // dry run -> swal confirm -> adopt -> reload containers
-  sb.dnmSave('Grafana');
-  sb.dnmApply('Grafana');
-  sb.dnmToggleMembers({});
-});
-check('settings page: post-adopt flow ran (adopt commit then a containers reload)', (() => {
-  const acts = r.posts.map(p => p.action + (p.dry_run ? ':dry' : ''));
-  const i = acts.indexOf('adopt');
-  return acts.includes('adopt:dry') && i !== -1 && acts.slice(i + 1).includes('containers');
-})());
-check('settings page: only handler names leaked: ' + r.leaked.join(','), r.leaked.every(k => HANDLERS.includes(k)));
+// Settings page: now only the iframe host. It must add no globals at all, and it must size the frame.
+// (The app itself is Preact in ui/, tested with vitest: ui/src/*.test.ts[x]; its adopt/save/apply flows live there.)
+const r = run('DockerNetMan.page', '/DockerNetMan');
+check('settings page: adds no globals: ' + r.leaked.join(','), r.leaked.length === 0);
+check('settings page: sized the frame', r.sb.__frame.style.height !== undefined && r.sb.__frame.style.height !== '');
+check('settings page: no ajax of its own (the app owns every request)', r.posts.length === 0);
+check('settings page: points at the app, not at api.php', /plugins\/docker\.netman\/app\/index\.php/.test(fs.readFileSync(path.join(root, 'DockerNetMan.page'), 'utf8')));
 
 // Injector runs on EVERY Unraid page (Menu="Buttons"): must add no globals beyond what it deliberately sets.
 for (const p of ['/Dashboard', '/Docker', '/Docker/UpdateContainer']) {
