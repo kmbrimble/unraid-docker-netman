@@ -19,11 +19,13 @@ const nets: Network[] = [
 let containers: Container[]
 let calls: Req[]
 let replies: Record<string, (d: Req) => unknown>
+let delays: Record<string, number>
 let root: HTMLElement
 
 const fetchStub = (async (_u: string, init: RequestInit) => {
   const d = Object.fromEntries(new URLSearchParams(String(init.body))) as Req
   calls.push(d)
+  if (delays[d.action]) await new Promise((r) => setTimeout(r, delays[d.action]))
   const fn = replies[d.action]
   return { status: 200, text: async () => JSON.stringify(fn ? fn(d) : { ok: true }) }
 }) as unknown as typeof fetch
@@ -44,6 +46,7 @@ beforeEach(() => {
   localStorage.clear()
   root = document.createElement('div'); document.body.appendChild(root)
   calls = []
+  delays = {}
   containers = [
     ctn({ name: 'Grafana', rows: [R('proxynet')], live_networks: { bridge: { ip: '1' }, proxynet: { ip: '172.18.0.4' } } }),
     ctn({ name: 'alpha', rows: [R('proxynet')], live_networks: { bridge: { ip: '1' } } }), // drift
@@ -127,6 +130,19 @@ describe('editor', () => {
     expect(JSON.parse(sent('save')[0].rows)).toEqual([{ network: 'proxynet', ip: '172.18.0.9', alias: null, mac: null }])
     expect(sent('save')[0].csrf_token).toBe('TOK')
     expect(root.querySelector('.dnm-toast')!.textContent).toContain('PostArgs updated')
+  })
+
+  it('after Save the editor shows the RELOADED rows even when the reload is slow (no stale remount, no revert on 2nd Save)', async () => {
+    await mount(); await edit('Grafana')
+    await click(byText('button', 'Add network')!)
+    await type(root.querySelectorAll('input[aria-label="Network 2"]')[0] as HTMLInputElement, 'spare')
+    replies.save = () => { containers[0] = ctn({ ...containers[0], rows: [R('proxynet'), R('spare')] }); return { ok: true, path: 'post' } }
+    delays.containers = 30
+    await click(byText('button', 'Save')!)
+    await act(async () => { await new Promise((r) => setTimeout(r, 10)) })
+    await act(async () => { await new Promise((r) => setTimeout(r, 80)) })
+    expect(root.querySelectorAll('.dnm-editor input[aria-label^="Network "]').length).toBe(2)
+    expect(root.querySelector('.dnm-fragment')!.textContent).toBe('&& CHAIN Grafana proxynet,spare')
   })
 
   it('MAC is disabled on the PostArgs path and enabled on ExtraParams', async () => {

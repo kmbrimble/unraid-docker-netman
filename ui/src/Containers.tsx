@@ -37,7 +37,7 @@ export function Containers({ api, notify, query, open, onToggleOpen, netVersion 
   const [known, setKnown] = useState<string[]>([])
 
   // Background reload: touches only the list state. Results of user actions live in the toasts, which this never clears.
-  const reload = (prev = showPrev) =>
+  const reload = (prev = showPrev): Promise<void> =>
     api.post<{ ok: boolean; containers: Container[] }>('containers', { include_previous: prev ? '1' : '0' })
       .then((d) => { setList(d.containers); setLoadError(null) })
       .catch((e: Error) => setLoadError(e.message))
@@ -79,8 +79,9 @@ export function Containers({ api, notify, query, open, onToggleOpen, netVersion 
     try {
       await api.post('adopt', { name })
       notify.ok(`Adopted ${name}.`)
-      setOpenName(name); setHintFor(name); setVersion((v) => v + 1)
-      void reload()
+      setOpenName(name); setHintFor(name)
+      await reload() // before the remount, so the editor is rebuilt from the adopted rows, not the pre-adopt ones
+      setVersion((v) => v + 1)
     } catch (e) { notify.err(new Error(`Adopt failed: ${(e as Error).message}`)) }
   }
 
@@ -117,7 +118,8 @@ export function Containers({ api, notify, query, open, onToggleOpen, netVersion 
                   {openName === c.name && !c.no_template && (
                     <Editor key={`${c.name}:${version}`} c={c} api={api} notify={notify} known={known}
                       hint={hintFor === c.name && c.running}
-                      onSaved={() => { setVersion((v) => v + 1); void reload() }}
+                      // Remount the editor only AFTER the reload lands: remounting first would rebuild it from the stale pre-save row.
+                      onSaved={() => { void reload().then(() => setVersion((v) => v + 1)) }}
                       onApplied={() => void reload()}
                       onAdopt={() => void startAdopt(c.name)} />
                   )}
