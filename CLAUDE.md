@@ -298,8 +298,11 @@ mirror would discard it), so the md5 goes in *before* tagging:
    `.github/workflows/release.yml` on GitHub rebuilds, requires the same md5, and publishes the Release with the `.txz` and
    `.md5` attached. See the `forge-release` skill. That workflow can also be dispatched by hand on GitHub as a dry run.
 
-The CHANGES entry stays by hand and is used verbatim as the release notes. The first real release on this layout is the final
-proof of the tag path; as of 2026-11-04 it still has not happened (latest tag `v0.3.9`, cut before the migration).
+The CHANGES entry stays by hand and is used verbatim as the release notes. The tag path is proven: v0.4.0 (2026-11-13) was
+the first release cut on this layout (PR, md5 committed before the tag, tag on Gitea, mirror, GitHub release workflow,
+`install-on-host.sh`); the md5 built locally, by Gitea CI, in the release asset and on the host all matched. Gotchas met:
+`gh`/`curl` to github.com from this container are blocked by the forge-guard hook unless `FORGE_GUARD=off` is set on the
+`install-on-host.sh` run itself (it calls `gh` inside), and the release asset appears a couple of minutes after the tag.
 
 `dist/` is still gitignored — artifacts are release assets, not repo contents.
 `scripts/build-plugin.sh` can run locally for a test build (it needs `xz`, which the claude-code container
@@ -317,7 +320,7 @@ over SSH, then verifies the flash `.plg` version, the `/var/log/plugins` registr
 installed tree, and that the packaged README is still the stock-shaped description. A failure
 there is a failed release, not a flaky script.
 
-Currently released and installed on this host: **v0.3.9** (`/boot/config/plugins/docker.netman/`).
+Currently released and installed on this host: **v0.4.1** (0.4.0 had the wrong tab label; 0.3.9 before that) (`/boot/config/plugins/docker.netman/`).
 
 ## Code review
 
