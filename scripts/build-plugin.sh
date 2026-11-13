@@ -31,9 +31,26 @@ php "$REPO_ROOT/scripts/check-plg.php" "$REPO_ROOT/$NAME.plg" || { echo "build a
 
 echo "Building $NAME-$VERSION.txz ..."
 
-mkdir -p "$PKG_DIR/include"
+mkdir -p "$PKG_DIR/include" "$PKG_DIR/app"
 
 cp "$REPO_ROOT"/plugin/include/*.php "$PKG_DIR/include/"
+
+# The web app (ui/, Preact + Vite + TypeScript): app/index.php is the PHP shell, app/assets/ the built JS and CSS. The
+# build is reproducible (fixed output names, no sourcemaps, lockfile-pinned, Node pinned in CI) so the archive md5
+# matches across runners. NETMAN_UI_DIST points at a prebuilt dist (tests/run.php builds the UI once and reuses it);
+# unset, this runs `npm ci && npm run build`.
+UI_DIST="${NETMAN_UI_DIST:-}"
+if [ -z "$UI_DIST" ]; then
+  echo "  building ui/ ($(node --version), npm $(npm --version))" >&2
+  ( cd "$REPO_ROOT/ui" && npm ci --no-audit --no-fund --loglevel=error && npm run build ) >&2
+  UI_DIST="$REPO_ROOT/ui/dist"
+fi
+if [ ! -f "$UI_DIST/assets/app.js" ] || [ ! -f "$UI_DIST/assets/app.css" ]; then
+  echo "build-plugin.sh: $UI_DIST/assets/app.js or app.css is missing: the UI did not build" >&2
+  exit 1
+fi
+cp "$REPO_ROOT"/plugin/app/index.php "$PKG_DIR/app/"
+cp -r "$UI_DIST/assets" "$PKG_DIR/app/assets"
 
 # .page files must sit in the plugin's installed ROOT — Unraid's page loader
 # globs plugins/*/*.page non-recursively.

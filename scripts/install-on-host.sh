@@ -101,7 +101,7 @@ echo "  flash .plg version: $INSTALLED"
 [ "$INSTALLED" = "$VERSION" ] || { echo "  FAIL: flash .plg is $INSTALLED, expected $VERSION"; exit 1; }
 [ -L "/var/log/plugins/$NAME.plg" ] || { echo "  FAIL: not registered in /var/log/plugins"; exit 1; }
 echo "  registered: yes"
-for f in README.md DockerNetMan.page DockerNetManInject.page docker-netman-core.js include/netman.php include/api.php include/docker.php; do
+for f in README.md DockerNetMan.page DockerNetManInject.page docker-netman-core.js app/index.php app/assets/app.js app/assets/app.css include/netman.php include/api.php include/docker.php; do
   [ -f "/usr/local/emhttp/plugins/$NAME/$f" ] || { echo "  FAIL: missing $f"; exit 1; }
 done
 echo "  installed tree: complete"

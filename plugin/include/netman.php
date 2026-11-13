@@ -23,7 +23,12 @@
  * 'alias' => ?str, 'mac' => ?str].
  */
 
-const NETMAN_STATE_PATH = '/boot/config/plugins/docker.netman/state.json';
+/** state.json location. NETMAN_STATE_PATH in the environment overrides it (tests only; nothing shipped sets it). */
+function netman_state_path(): string
+{
+    $e = getenv('NETMAN_STATE_PATH');
+    return $e !== false && $e !== '' ? $e : '/boot/config/plugins/docker.netman/state.json';
+}
 
 /** Networks that can never be an "additional network" target. */
 function netman_reserved_networks(): array
@@ -397,23 +402,23 @@ function netman_serialize_post(string $remaining, string $chain): string
 
 function netman_state_load(): array
 {
-    if (!is_file(NETMAN_STATE_PATH)) {
+    if (!is_file(netman_state_path())) {
         return [];
     }
-    $json = file_get_contents(NETMAN_STATE_PATH);
+    $json = file_get_contents(netman_state_path());
     $data = json_decode($json ?: '{}', true);
     return is_array($data) ? $data : [];
 }
 
 function netman_state_save(array $state): void
 {
-    $dir = dirname(NETMAN_STATE_PATH);
+    $dir = dirname(netman_state_path());
     if (!is_dir($dir)) {
         mkdir($dir, 0755, true);
     }
-    $tmp = NETMAN_STATE_PATH . '.tmp';
+    $tmp = netman_state_path() . '.tmp';
     file_put_contents($tmp, json_encode($state, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
-    rename($tmp, NETMAN_STATE_PATH);
+    rename($tmp, netman_state_path());
 }
 
 function netman_state_get(array $state, string $containerName): array
@@ -429,11 +434,16 @@ function netman_state_set(array $state, string $containerName, string $primary, 
 
 // ---- template XML I/O -------------------------------------------------
 
-const NETMAN_TEMPLATES_DIR = '/boot/config/plugins/dockerMan/templates-user';
+/** dockerMan's user templates. NETMAN_TEMPLATES_DIR in the environment overrides it (tests only). */
+function netman_templates_dir(): string
+{
+    $e = getenv('NETMAN_TEMPLATES_DIR');
+    return $e !== false && $e !== '' ? $e : '/boot/config/plugins/dockerMan/templates-user';
+}
 
 function netman_list_templates(): array
 {
-    $files = glob(NETMAN_TEMPLATES_DIR . '/my-*.xml') ?: [];
+    $files = glob(netman_templates_dir() . '/my-*.xml') ?: [];
     sort($files);
     return $files;
 }
@@ -483,7 +493,7 @@ function netman_xml_decode(string $s): string
 /** Read a template, return ['xml'=>SimpleXMLElement, 'path'=>str] or null. */
 function netman_read_template(string $containerName): ?array
 {
-    $path = NETMAN_TEMPLATES_DIR . '/my-' . $containerName . '.xml';
+    $path = netman_templates_dir() . '/my-' . $containerName . '.xml';
     if (!is_file($path)) {
         return null;
     }

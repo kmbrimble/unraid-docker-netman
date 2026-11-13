@@ -16,18 +16,37 @@ See README.md and CLAUDE.md for design and the release process.
 <!DOCTYPE PLUGIN [
 <!ENTITY name      "docker.netman">
 <!ENTITY author    "kmbrimble">
-<!ENTITY version   "0.3.9">
-<!ENTITY launch    "Settings/DockerNetMan">
+<!ENTITY version   "0.4.0">
+<!ENTITY launch    "DockerNetMan">
 <!ENTITY pluginURL "https://raw.githubusercontent.com/kmbrimble/unraid-docker-netman/main/docker.netman.plg">
 <!ENTITY gitURL    "https://github.com/kmbrimble/unraid-docker-netman/releases/download/v&version;">
 <!ENTITY plgPATH   "/boot/config/plugins/&name;">
 <!ENTITY emhttp    "/usr/local/emhttp/plugins/&name;">
-<!ENTITY md5       "cf689891203a36bab65b0063234179a5">
+<!ENTITY md5       "2321e074893916ebb95cfe0e04c8f2a6">
 ]>
 
 <PLUGIN name="&name;" author="&author;" version="&version;" launch="&launch;" pluginURL="&pluginURL;" support="https://github.com/kmbrimble/unraid-docker-netman" min="7.0" icon="sitemap">
 
 <CHANGES>
+###0.4.0
+- New: the settings page is rebuilt as a web app (Preact + Vite + TypeScript, the Kiztigs house design system,
+  the same shell as SecretsMan 1.1.x): light/dark/auto theme switch, collapsible Containers and Networks cards with
+  Expand all / Collapse all, search that re-opens a collapsed card, toasts, and dialogs for create-network, delete,
+  Adopt (showing the before/after) and Apply all. Everything the old page did is there: sync chips, the one-at-a-time
+  editor with its live fragment preview, Save, Adopt with the live-IP hint, Apply now, Apply all (now asks first),
+  Show previous apps / Only with additional networks (same saved toggle state), network create/delete and member
+  lists. Full width, no page scroll, usable at phone width.
+- Changed: Docker NetMan now has its own top-bar tab, "NetMan", right after SecretsMan, instead of sitting under
+  Settings, Utilities. Its address is now /DockerNetMan. The Docker page's "Docker NetMan" button and the Add/Update
+  Container injector are unchanged apart from that link.
+- Changed: include/api.php is unchanged on the wire (it already answered JSON only); the web tests now run it as a
+  real subprocess for every action, plus non-POST and unknown-action rejection. NETMAN_STATE_PATH and
+  NETMAN_TEMPLATES_DIR environment variables (tests only; nothing shipped sets them) redirect state.json and the
+  template directory.
+- Build: the package now builds the UI (npm ci, Node 22.23.4 pinned in CI); the archive stays byte-reproducible.
+- Not in this release: Unraid 7.4's native Additional Networks handling (branch feature/native-extranetworks) still
+  needs its acceptance run on a real 7.4 host. The new UI already shows native-field networks and the overlap warning
+  if the server ever reports them, but this release's server does not.
 ###0.3.9
 - Fixed: the Settings page script leaked ~40 top-level names (h, API, dnm*, ...) into the global
   scope of every Unraid page it ran on; it is now a strict-mode closure that exposes only the

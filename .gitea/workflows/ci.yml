@@ -27,12 +27,21 @@ jobs:
       - name: Check .plg parses
         run: php scripts/check-plg.php
 
-      - name: PHP tests
-        run: php tests/run.php
-
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
         with:
-          node-version: '20'
+          node-version: '22.23.4'
+
+      - name: UI tests, type-check, contrast and build
+        working-directory: ui
+        run: |
+          npm ci --no-audit --no-fund
+          npm test
+          npm run check:contrast
+          npm run build
+
+      # builds ui/ once and the package several times (layout, reproducibility); needs Node
+      - name: PHP tests
+        run: php tests/run.php
 
       - name: JS tests
         run: |
@@ -68,5 +77,10 @@ jobs:
       - name: Check .plg parses
         run: php scripts/check-plg.php
 
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
+        with:
+          node-version: '22.23.4'
+
+      # tests/run.php builds the UI and the package, so Node is needed here too
       - name: PHP tests
         run: php tests/run.php
