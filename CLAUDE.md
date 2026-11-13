@@ -61,7 +61,8 @@ the `Menu="Buttons"` injector vehicle, capture-phase submit listener, fail soft,
 strict-mode IIFE): see the `unraid-webgui-plugin-pages` skill, "Page registration". The 0.1.0–0.3.1
 narrative (the `Docker:3` attempt, the screenshot) is in `docs/history.md`.
 
-- `DockerNetMan.page`: `Menu="Tasks:92"`, `Title="NetMan"`, `Code="e911"` (the stock `icon-network` glyph), at
+- `DockerNetMan.page`: `Menu="Tasks:92"`, `Title="NetMan"`, `Name="NetMan"` (the top-bar label is the `Name` header, else
+  the file basename, so without it the tab read DOCKERNETMAN: found live in 0.4.0), `Code="e911"` (the stock `icon-network` glyph), at
   `/DockerNetMan`: its own top-bar tab, directly after SecretsMan (`Tasks:91`; nothing else sits at 92 on this
   host: Tasks are 1 Dashboard/Main, 2 Shares, 4 Settings, 50 Plugins, 60 Docker, 70 VMs, 80 Apps, 90 Tools). Since 0.4.0
   it is only a thin iframe host plus "Open full page", exactly like `SecretsMan.page`; the UI is the Preact app in

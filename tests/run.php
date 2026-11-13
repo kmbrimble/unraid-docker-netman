@@ -266,6 +266,7 @@ function ui_dist_for_tests(): ?string
 $page = (string) file_get_contents(__DIR__ . '/../plugin/DockerNetMan.page');
 check('page: is the top-bar tab right after SecretsMan (Tasks:92)', str_starts_with($page, 'Menu="Tasks:92"'));
 check('page: tab title is NetMan', (bool) preg_match('/^Title="NetMan"$/m', $page));
+check('page: top-bar label is set by Name="NetMan" (the layout prints Name, else the file basename: DockerNetMan)', (bool) preg_match('/^Name="NetMan"$/m', $page));
 check('page: is no longer under Settings > Utilities', !str_contains($page, 'Utilities'));
 check('page: is a thin iframe host for the app (no api.php, no ajax of its own)', str_contains($page, '/plugins/docker.netman/app/index.php') && !str_contains($page, 'api.php') && !str_contains($page, '$.post'));
 check('page: offers "Open full page"', str_contains($page, 'Open full page'));

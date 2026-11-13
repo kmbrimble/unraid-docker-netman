@@ -1,5 +1,6 @@
 Menu="Tasks:92"
 Title="NetMan"
+Name="NetMan"
 Icon="sitemap"
 Code="e911"
 Tabs="false"
