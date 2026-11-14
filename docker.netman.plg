@@ -3,31 +3,37 @@
 <!--
 Docker NetMan — additional Docker networks per container, persisted in
 the container's own template.
-https://github.com/kmbrimble/unraid-docker-netman
+https://git.kiztigs.com/kmbrimble/unraid-docker-netman
 
 Not the same project as the existing Community Applications plugin "Docker Networks" by
 mstrhakr — see README.md "Compared to Docker Networks (mstrhakr)" for how the two differ.
 
 Not distributed via Community Applications. Install by URL from
-Plugins -> Install Plugin, using this file's raw.githubusercontent.com URL.
+Plugins -> Install Plugin, using this file's raw git.kiztigs.com URL.
 See README.md and CLAUDE.md for design and the release process.
 -->
 
 <!DOCTYPE PLUGIN [
 <!ENTITY name      "docker.netman">
 <!ENTITY author    "kmbrimble">
-<!ENTITY version   "0.4.1">
+<!ENTITY version   "0.4.2">
 <!ENTITY launch    "DockerNetMan">
-<!ENTITY pluginURL "https://raw.githubusercontent.com/kmbrimble/unraid-docker-netman/main/docker.netman.plg">
-<!ENTITY gitURL    "https://github.com/kmbrimble/unraid-docker-netman/releases/download/v&version;">
+<!ENTITY pluginURL "https://git.kiztigs.com/kmbrimble/unraid-docker-netman/raw/branch/main/docker.netman.plg">
+<!ENTITY gitURL    "https://git.kiztigs.com/kmbrimble/unraid-docker-netman/releases/download/v&version;">
 <!ENTITY plgPATH   "/boot/config/plugins/&name;">
 <!ENTITY emhttp    "/usr/local/emhttp/plugins/&name;">
 <!ENTITY md5       "32ac8dcf0d62ac4da5d3e551e71c8072">
 ]>
 
-<PLUGIN name="&name;" author="&author;" version="&version;" launch="&launch;" pluginURL="&pluginURL;" support="https://github.com/kmbrimble/unraid-docker-netman" min="7.0" icon="sitemap">
+<PLUGIN name="&name;" author="&author;" version="&version;" launch="&launch;" pluginURL="&pluginURL;" support="https://git.kiztigs.com/kmbrimble/unraid-docker-netman" min="7.0" icon="sitemap">
 
 <CHANGES>
+###0.4.2
+- Delivery moved to Gitea (git.kiztigs.com): the plugin file and its release
+  packages now come from the Gitea repository instead of GitHub, so the server
+  needs to reach git.kiztigs.com to check for and fetch NetMan updates. No
+  change to what NetMan does.
+
 ###0.4.1
 - Fixed: the top-bar tab read "DOCKERNETMAN" instead of "NETMAN". Unraid's tab bar prints the page's Name header
   (else its file name), not Title, so DockerNetMan.page now sets Name="NetMan". The address stays /DockerNetMan.

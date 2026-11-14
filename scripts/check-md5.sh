@@ -5,7 +5,7 @@
 #
 # Gitea is the primary forge and GitHub is a push mirror, so the release commit can no longer be
 # written back by a GitHub workflow. The md5 is therefore committed *before* the tag (in the PR that
-# bumps &version;), checked by Gitea CI on that PR, and checked again by the GitHub release workflow
+# bumps &version;), checked by Gitea CI on that PR, and checked again by the Gitea release workflow
 # when the mirrored tag arrives. The build is deterministic (see build-plugin.sh), so both sides must agree.
 #   --report-only  print the md5 of this build and exit 0 (used by the GitHub dry run to compare runners)
 set -euo pipefail

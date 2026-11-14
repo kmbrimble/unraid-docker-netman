@@ -108,7 +108,7 @@ staying reachable (HTTP 200) through the recreate and a subsequent stop/start cy
 ## Install
 
 Plugins → Install Plugin →
-`https://raw.githubusercontent.com/kmbrimble/unraid-docker-netman/main/docker.netman.plg`
+`https://git.kiztigs.com/kmbrimble/unraid-docker-netman/raw/branch/main/docker.netman.plg`
 
 ## Development
 

@@ -309,7 +309,7 @@ if (ui_dist_for_tests() === null) {
 }
 
 // ---- reproducible build ------------------------------------------------
-// The .plg's &md5; is committed before the tag and the GitHub release workflow rebuilds and requires it to match,
+// The .plg's &md5; is committed before the tag and the release workflow rebuilds and requires it to match,
 // so the .txz must not depend on the machine. xz >= 5.6 compresses multi-threaded by default (sizes go into the
 // block header), and cp/mkdir follow the caller's umask. Each variant perturbs something a runner can differ in.
 

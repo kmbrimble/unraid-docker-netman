@@ -142,7 +142,7 @@ crash with before/after repro, the `width: auto` measurement, row stacking) is i
 ## .plg parse guard
 
 Generic `.plg` XML rules: see the `unraid-plugin-packaging` skill, "The .plg is XML with entity
-substitution". Here: `scripts/check-plg.php` is the guard. It runs in the Gitea CI, `release.yml` (GitHub)
+substitution". Here: `scripts/check-plg.php` is the guard. It runs in the Gitea CI, `release.yml`
 and `scripts/build-plugin.sh` (which refuses to build on failure). 0.3.6 was unparseable because of a raw
 `<Name>` in CHANGES; escape angle brackets there as `&lt;`/`&gt;`.
 
@@ -179,9 +179,9 @@ The 0.3.9 results, the 0.3.8 `before.getTime` false alarm and the Adopt acceptan
 Packaging, install and CDN-cache rules: see the `unraid-plugin-packaging` skill; release mechanics: the
 `forge-release` skill. Here:
 
-- Self-hosted `.plg` installed by URL from `raw.githubusercontent.com`, packaged `.txz` attached to a
-  GitHub Release, `dist/` gitignored (artifacts are release assets, not repo contents).
-- `scripts/build-plugin.sh` assembles the tree; CI runs it (release-readiness on Gitea, then the GitHub
+- Self-hosted `.plg` installed by URL from `git.kiztigs.com` (raw branch URL), packaged `.txz` attached to a
+  Gitea release, `dist/` gitignored (artifacts are release assets, not repo contents).
+- `scripts/build-plugin.sh` assembles the tree; CI runs it (release-readiness on Gitea, then the Gitea
   release workflow on the mirrored tag). The archive is deterministic (sorted names, fixed mtime), so the
   md5 is the same on both runners.
 - The raw `.plg` caches for `max-age=300`. The versioned `.txz` filename is not the risk (each version's
@@ -191,7 +191,7 @@ Packaging, install and CDN-cache rules: see the `unraid-plugin-packaging` skill;
 ## Version numbers are compared with strcmp
 
 Rule: see the `unraid-plugin-packaging` skill, "Versions are compared with strcmp". `0.3.10` would sort
-before `0.3.9`. Enforced here by `.github/workflows/release.yml` (on GitHub, at the mirrored tag), which
+before `0.3.9`. Enforced here by `scripts/gitea-release.sh` (run by `.gitea/workflows/release.yml` at the tag), which
 refuses a version that does not sort after the previous tag as a plain string, and by
 `scripts/install-on-host.sh`, which checks against the host's installed version and names its `--forced`
 flag when crossing a boundary is intended. Keep components single-digit, or zero-pad.
@@ -284,8 +284,11 @@ never trust a log line or exit code alone.
 `https://git.kiztigs.com/kmbrimble/unraid-docker-netman` (`origin`, gt credential helper; `gt`, not `gh`, for issues/PRs).
 `github.com/kmbrimble/unraid-docker-netman` receives every push to Gitea within about a minute (`sync_on_commit`, plus a
 10-minute sweep: push mirror `interval: 10m0s`, checked via the Gitea API 2026-11-04) and **must never be pushed to directly**: the mirror force-syncs and prunes refs, so anything that exists only
-on GitHub is lost. GitHub has Issues, Wiki, Projects, Discussions and PRs switched off. The `.plg` URLs
-(`raw.githubusercontent.com/.../main/docker.netman.plg` and the release assets) deliberately still point at GitHub.
+on GitHub is lost. GitHub has Issues, Wiki, Projects, Discussions and PRs switched off. **Delivery is from Gitea (since 0.4.2, 14 Nov
+2026; Kieren's decision: Gitea delivers all his Unraid plugins, GitHub is for HACS add-ons only):** `pluginURL` is
+`https://git.kiztigs.com/kmbrimble/unraid-docker-netman/raw/branch/main/docker.netman.plg` and the `.txz`/`.md5` come from the Gitea release.
+The owner is public on Gitea (LAN-only behind Caddy's `@git_lan_only`), so no token is needed. Cost: plugin updates depend on the homelab
+being up and on the host's `git.kiztigs.com` hosts entry (`/boot/config/go`).
 `main` is protected on Gitea: changes go through a PR, both CI checks (`CI / php84 (pull_request)`, `CI / php81 (pull_request)`)
 must be green, and butler-bot merges its own green PRs (no human approval).
 
@@ -294,9 +297,12 @@ mirror would discard it), so the md5 goes in *before* tagging:
 
 1. In the PR that bumps `&version;` write the `###<version>` CHANGES entry and set `&md5;`. CI's release-readiness step
    (any untagged `&version;`) builds the package and fails with `set &md5; to <value>`; push again with that value. Merge.
-2. Tag the merge commit on Gitea: `git tag v<version> && git push origin v<version>`. The tag is mirrored and
-   `.github/workflows/release.yml` on GitHub rebuilds, requires the same md5, and publishes the Release with the `.txz` and
-   `.md5` attached. See the `forge-release` skill. That workflow can also be dispatched by hand on GitHub as a dry run.
+2. Tag the merge commit on Gitea: `git tag v<version> && git push origin v<version>`. The tag runs `.gitea/workflows/release.yml`:
+   repo checks, then `scripts/gitea-release.sh` (shared by all plugin repos; canonical copy in unraid-flightplan) checks tag == `&version;`,
+   CHANGES entry and strcmp order against every other tag, rebuilds, requires the same md5, creates the **Gitea release** with the `.txz`
+   and `.md5`, and reads them back. Token: the job token (or Actions secret `RELEASE_TOKEN` if set). See the `forge-release` skill. The
+   workflow's `workflow_dispatch` is a dry run by default, or with `tag` + `publish` recovers an existing tag whose run failed (tags never
+   move). The mirrored `.github/workflows/release.yml` still exists and publishes the same bytes to a GitHub release nothing depends on.
 
 The CHANGES entry stays by hand and is used verbatim as the release notes. The tag path is proven: v0.4.0 (2026-11-13) was
 the first release cut on this layout (PR, md5 committed before the tag, tag on Gitea, mirror, GitHub release workflow,
@@ -308,8 +314,8 @@ the first release cut on this layout (PR, md5 committed before the tag, tag on G
 `scripts/build-plugin.sh` can run locally for a test build (it needs `xz`, which the claude-code container
 now has), but `&md5;` still comes from CI, never a local build.
 
-Gitea CI runs on every push and PR; what it runs is under "Test command". The GitHub release workflow repeats
-those checks rather than trusting a result it cannot see. The GitHub release workflow repeats those checks rather than trusting a result it cannot see.
+Gitea CI runs on every push and PR; what it runs is under "Test command". The Gitea release workflow repeats
+those checks rather than trusting a result it cannot see.
 
 **Installing on the host is the one step CI cannot do** — GitHub's runners (and the Gitea runner VM) have no route to
 192.168.0.10. `scripts/install-on-host.sh` does it from the claude-code container, and running it

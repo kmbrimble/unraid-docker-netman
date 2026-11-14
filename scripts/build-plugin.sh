@@ -1,8 +1,8 @@
 #!/bin/bash
 # Assembles the installable plugin tree and packages it as a .txz + .md5,
-# for attaching to a GitHub Release (see CLAUDE.md "Shipping model").
+# for attaching to a Gitea release (see CLAUDE.md "Shipping model").
 #
-# Run by Gitea CI (release-readiness) and by .github/workflows/release.yml on a mirrored v* tag, and available locally for a test build
+# Run by Gitea CI (release-readiness) and by .gitea/workflows/release.yml on a v* tag, and available locally for a test build
 # (needs GNU tar and xz); a local build gives the same md5 as CI. It only produces files; it neither
 # tags nor publishes anything — see CLAUDE.md "Deploy and verify".
 #
@@ -69,7 +69,7 @@ cp "$REPO_ROOT"/plugin/README.md "$PKG_DIR/"
 mkdir -p "$OUT_DIR"
 TXZ_PATH="$OUT_DIR/$NAME-$VERSION.txz"
 # Deterministic archive: the same source must give the same bytes on any machine, because the .plg's &md5; is
-# committed before the tag and the GitHub release workflow rebuilds and requires it to match (scripts/check-md5.sh).
+# committed before the tag and the release workflow rebuilds and requires it to match (scripts/check-md5.sh).
 # - sorted names, fixed mtime, numeric root owner;
 # - --mode: cp/mkdir/git checkout all inherit the caller's umask, so normalise to 0644 files / 0755 dirs;
 # - xz -T1 on the command line: xz >= 5.6 defaults to multi-threaded, which writes sizes into the block header and
@@ -87,5 +87,5 @@ echo "  md5: $MD5"
 echo
 echo "This is a local build. A release is: bump &version; in docker.netman.plg, write its ###<version>"
 echo "  CHANGES entry, set &md5; to the md5 above (CI tells you the value), merge the PR on Gitea, then tag"
-echo "  v<version> on Gitea. The tag is mirrored to GitHub and .github/workflows/release.yml publishes it."
+echo "  v<version> on Gitea. The tag runs .gitea/workflows/release.yml, which publishes the Gitea release."
 echo "  Then run scripts/install-on-host.sh to put it on the Unraid host. See CLAUDE.md \"Deploy and verify\"."
